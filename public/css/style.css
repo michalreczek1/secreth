@@ -1,0 +1,560 @@
+/* ── RESET & BASE ─────────────────────────────────────────────────────────── */
+@import url('https://fonts.googleapis.com/css2?family=Special+Elite&family=Libre+Baskerville:ital,wght@0,400;0,700;1,400&display=swap');
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --cream: #f5efe0;
+  --paper: #ede3cc;
+  --ink: #1a1208;
+  --red: #8b1a1a;
+  --red-bright: #c04040;
+  --gold: #c9a227;
+  --gold-dim: #7a6020;
+  --blue: #1e3a5f;
+  --blue-bright: #4a7ab5;
+  --bg: #0d0a05;
+  --bg2: #1a1208;
+  --bg3: #251a0a;
+  --border: #3a2a15;
+  --text-dim: #7a6a4a;
+  --text-muted: #4a3a25;
+  --liberal: #a8d8ff;
+  --fascist: #ffaaaa;
+}
+
+html, body { height: 100%; font-family: 'Libre Baskerville', serif; background: var(--bg); color: var(--cream); }
+
+/* ── TYPOGRAPHY ──────────────────────────────────────────────────────────── */
+.font-title { font-family: 'Special Elite', monospace; }
+h1, h2, h3 { font-family: 'Special Elite', monospace; }
+
+/* ── SCROLLBAR ───────────────────────────────────────────────────────────── */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: var(--bg); }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+/* ── LOADING ─────────────────────────────────────────────────────────────── */
+.loading-screen {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  height: 100vh; gap: 16px;
+}
+.loading-logo {
+  font-family: 'Special Elite', monospace; font-size: 48px; color: var(--gold);
+  text-shadow: 2px 2px 0 var(--red); letter-spacing: 6px;
+  animation: pulse 2s ease-in-out infinite;
+}
+.loading-sub { color: var(--text-dim); font-style: italic; }
+@keyframes pulse { 0%,100%{opacity:.6} 50%{opacity:1} }
+
+/* ── LAYOUT ──────────────────────────────────────────────────────────────── */
+#app { min-height: 100vh; display: flex; flex-direction: column; }
+
+.main-layout {
+  display: grid;
+  grid-template-columns: 260px 1fr 280px;
+  grid-template-rows: auto 1fr;
+  height: 100vh;
+  overflow: hidden;
+}
+
+/* ── HEADER ──────────────────────────────────────────────────────────────── */
+.site-header {
+  grid-column: 1 / -1;
+  background: var(--ink);
+  border-bottom: 2px solid var(--gold);
+  padding: 10px 20px;
+  display: flex; align-items: center; gap: 20px;
+  flex-wrap: wrap;
+  box-shadow: 0 2px 20px rgba(201,162,39,.2);
+}
+.site-logo {
+  font-family: 'Special Elite', monospace; font-size: 22px; color: var(--gold);
+  text-shadow: 1px 1px 0 var(--red); letter-spacing: 3px; white-space: nowrap;
+}
+.site-nav { display: flex; gap: 8px; flex: 1; flex-wrap: wrap; align-items: center; }
+.site-user { display: flex; align-items: center; gap: 12px; margin-left: auto; flex-wrap: wrap; justify-content: flex-end; }
+.user-badge {
+  font-family: 'Special Elite', monospace; font-size: 11px; letter-spacing: 1px;
+  padding: 4px 10px; border: 1px solid var(--gold); color: var(--gold);
+}
+.admin-badge {
+  font-size: 9px; padding: 2px 6px; background: var(--red); color: white;
+  border: 1px solid var(--red-bright); text-transform: uppercase; letter-spacing: 1px;
+}
+
+/* ── PANELS ──────────────────────────────────────────────────────────────── */
+.panel-left {
+  background: var(--bg2); border-right: 1px solid var(--border);
+  display: flex; flex-direction: column; overflow: hidden;
+}
+.panel-main {
+  background: radial-gradient(ellipse at 30% 20%, #2a1505 0%, var(--bg) 70%);
+  overflow-y: auto; padding: 20px 20px 32px;
+}
+.panel-chat {
+  background: var(--bg2); border-left: 1px solid var(--border);
+  display: flex; flex-direction: column; overflow: hidden;
+}
+
+.panel-header {
+  font-family: 'Special Elite', monospace; font-size: 11px; letter-spacing: 2px;
+  text-transform: uppercase; color: var(--gold); padding: 12px 14px;
+  border-bottom: 1px solid var(--border); flex-shrink: 0;
+}
+
+/* ── BUTTONS ─────────────────────────────────────────────────────────────── */
+.btn {
+  font-family: 'Special Elite', monospace; font-size: 12px; letter-spacing: 1px;
+  text-transform: uppercase; padding: 8px 14px; border: 2px solid currentColor;
+  cursor: pointer; transition: all .12s; background: transparent; display: inline-block;
+  white-space: nowrap;
+}
+.btn:hover:not(:disabled) { transform: translate(-2px,-2px); box-shadow: 2px 2px 0 currentColor; }
+.btn:active:not(:disabled) { transform: none; box-shadow: none; }
+.btn:disabled { opacity: .4; cursor: not-allowed; }
+.btn-sm { padding: 5px 10px; font-size: 11px; }
+.btn-full { width: 100%; }
+
+.btn-gold { color: var(--gold); border-color: var(--gold); background: var(--ink); }
+.btn-gold:hover:not(:disabled) { background: var(--gold) !important; color: var(--ink) !important; }
+.btn-red { color: #ffaaaa; border-color: var(--red-bright); background: rgba(92,16,16,.5); }
+.btn-red:hover:not(:disabled) { background: var(--red) !important; }
+.btn-blue { color: var(--liberal); border-color: var(--blue-bright); background: rgba(30,58,95,.5); }
+.btn-blue:hover:not(:disabled) { background: var(--blue) !important; }
+.btn-ghost { color: var(--text-dim); border-color: var(--border); }
+.btn-ghost:hover:not(:disabled) { color: var(--cream); border-color: var(--text-dim); }
+.btn-danger { color: #ff9999; border-color: #ff4444; background: rgba(60,5,5,.6); }
+
+/* ── INPUTS ──────────────────────────────────────────────────────────────── */
+input[type=text], input[type=password], textarea {
+  font-family: 'Libre Baskerville', serif; font-size: 14px; padding: 8px 12px;
+  border: 2px solid var(--border); background: rgba(255,255,255,.04); color: var(--cream);
+  width: 100%; outline: none; transition: border-color .15s;
+}
+input[type=text]:focus, input[type=password]:focus, textarea:focus {
+  border-color: var(--gold);
+}
+input::placeholder { color: var(--text-muted); }
+
+label { font-size: 12px; color: var(--text-dim); display: block; margin-bottom: 4px; letter-spacing: 1px; text-transform: uppercase; }
+
+/* ── CARDS / BOXES ───────────────────────────────────────────────────────── */
+.box {
+  background: rgba(255,255,255,.03); border: 1px solid var(--border);
+  padding: 16px; margin-bottom: 12px;
+}
+.box-gold { border-color: var(--gold-dim); background: rgba(201,162,39,.05); }
+.box-red { border-color: var(--red); background: rgba(139,26,26,.1); }
+.box-blue { border-color: var(--blue); background: rgba(30,58,95,.1); }
+
+.section-title {
+  font-family: 'Special Elite', monospace; font-size: 13px; letter-spacing: 3px;
+  text-transform: uppercase; color: var(--gold); margin-bottom: 14px;
+  padding-bottom: 8px; border-bottom: 1px solid rgba(201,162,39,.3);
+}
+
+/* ── AUTH SCREEN ─────────────────────────────────────────────────────────── */
+.auth-screen {
+  display: flex; align-items: center; justify-content: center;
+  min-height: 100vh;
+  background: radial-gradient(ellipse at 30% 20%, #2a1505 0%, var(--bg) 70%);
+}
+.auth-box {
+  width: 380px; background: var(--bg2); border: 2px solid var(--gold);
+  box-shadow: 6px 6px 0 var(--gold-dim), 0 0 40px rgba(201,162,39,.2);
+  padding: 36px;
+}
+.auth-logo {
+  font-family: 'Special Elite', monospace; font-size: 32px; color: var(--gold);
+  text-shadow: 2px 2px 0 var(--red); letter-spacing: 4px; text-align: center;
+  margin-bottom: 6px;
+}
+.auth-sub { text-align: center; font-style: italic; color: var(--text-dim); font-size: 12px; margin-bottom: 28px; }
+.auth-form { display: flex; flex-direction: column; gap: 14px; }
+.auth-switch { text-align: center; margin-top: 16px; font-size: 13px; color: var(--text-dim); }
+.auth-switch a { color: var(--gold); cursor: pointer; text-decoration: underline; }
+
+/* ── NOTICE BOXES ────────────────────────────────────────────────────────── */
+.notice {
+  padding: 10px 14px; border-left: 3px solid; font-size: 13px; margin: 8px 0; line-height: 1.5;
+}
+.notice-error { border-color: var(--red-bright); color: var(--fascist); background: rgba(139,26,26,.15); }
+.notice-success { border-color: #4a8; color: #8fd; background: rgba(74,136,90,.15); }
+.notice-info { border-color: var(--gold); color: var(--gold); background: rgba(201,162,39,.08); }
+.notice-warn { border-color: #c84; color: #fca; background: rgba(200,132,60,.08); }
+
+/* ── LOBBY / ROOMS LIST ──────────────────────────────────────────────────── */
+.rooms-list { display: flex; flex-direction: column; gap: 8px; }
+.room-card {
+  background: rgba(255,255,255,.03); border: 1px solid var(--border);
+  padding: 12px 14px; display: flex; align-items: center; gap: 12px;
+  transition: border-color .15s;
+}
+.room-card:hover { border-color: var(--gold-dim); }
+.room-name { font-weight: 700; font-size: 14px; flex: 1; }
+.room-meta { font-size: 11px; color: var(--text-dim); }
+.room-state { font-family: 'Special Elite', monospace; font-size: 10px; letter-spacing: 1px; padding: 2px 6px; border: 1px solid; }
+.state-lobby { color: #8fd; border-color: #4a8; }
+.state-playing { color: #fca; border-color: #c84; }
+.state-finished { color: var(--text-dim); border-color: var(--border); }
+
+/* ── PLAYER LIST (sidebar) ───────────────────────────────────────────────── */
+.player-list { display: flex; flex-direction: column; gap: 4px; padding: 10px; overflow-y: auto; flex: 1; }
+.player-item {
+  display: flex; align-items: center; gap: 8px; padding: 6px 8px;
+  border: 1px solid transparent; font-size: 12px; transition: all .12s;
+}
+.player-item.is-president { border-color: var(--gold); background: rgba(201,162,39,.06); }
+.player-item.is-chancellor { border-color: var(--blue-bright); background: rgba(30,58,95,.1); }
+.player-item.is-dead { opacity: .3; text-decoration: line-through; }
+.player-item.is-me { color: var(--gold); }
+.player-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--text-muted); flex-shrink: 0; }
+.player-dot.online { background: #4a8; }
+.player-dot.dead { background: var(--red); }
+.player-name { flex: 1; }
+.player-role-badge { font-size: 9px; }
+
+.badge {
+  font-family: 'Special Elite', monospace; font-size: 9px; letter-spacing: 1px;
+  padding: 2px 6px; border: 1px solid; text-transform: uppercase; white-space: nowrap;
+}
+.badge-pres { background: var(--gold); color: var(--ink); border-color: var(--ink); }
+.badge-chan { background: var(--blue); color: var(--liberal); border-color: var(--blue-bright); }
+.badge-liberal { background: var(--blue); color: var(--liberal); border-color: var(--blue-bright); }
+.badge-fascist { background: #5c1010; color: var(--fascist); border-color: var(--red-bright); }
+.badge-hitler { background: var(--red); color: white; border-color: var(--red-bright); }
+.badge-vote-ja { background: rgba(30,58,95,.55); color: var(--liberal); border-color: var(--blue-bright); }
+.badge-vote-nein { background: rgba(92,16,16,.65); color: var(--fascist); border-color: var(--red-bright); }
+.badge-vote-pending { background: rgba(255,255,255,.05); color: var(--text-dim); border-color: var(--border); }
+
+/* ── CHAT ────────────────────────────────────────────────────────────────── */
+.chat-tabs { display: flex; border-bottom: 1px solid var(--border); }
+.chat-tab {
+  flex: 1; padding: 8px; font-family: 'Special Elite', monospace; font-size: 10px;
+  letter-spacing: 1px; text-transform: uppercase; text-align: center; cursor: pointer;
+  color: var(--text-dim); border: none; background: transparent; transition: all .12s;
+  border-bottom: 2px solid transparent;
+}
+.chat-tab.active { color: var(--gold); border-bottom-color: var(--gold); }
+.chat-tab:hover:not(.active) { color: var(--cream); }
+
+.chat-messages {
+  flex: 1; overflow-y: auto; padding: 10px; display: flex; flex-direction: column; gap: 4px;
+}
+.chat-msg { font-size: 12px; line-height: 1.5; }
+.chat-msg .msg-user { font-weight: 700; color: var(--gold); }
+.chat-msg .msg-user.system { color: #8fd; }
+.chat-msg .msg-text { color: var(--cream); }
+.chat-msg .msg-time { font-size: 10px; color: var(--text-muted); margin-left: 4px; }
+
+.chat-input-row { display: flex; gap: 6px; padding: 10px; border-top: 1px solid var(--border); flex-shrink: 0; }
+.chat-input-row input { flex: 1; font-size: 13px; }
+.chat-input-row button { padding: 8px 12px; }
+
+/* ── GAME BOARD ──────────────────────────────────────────────────────────── */
+.game-layout {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-height: calc(100vh - 170px);
+}
+
+.game-columns {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 380px;
+  gap: 12px;
+  align-items: start;
+}
+
+.policy-boards { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.policy-board { padding: 12px; border: 2px solid; }
+.board-lib { background: #050d18; border-color: var(--blue); }
+.board-fas { background: #180505; border-color: var(--red); }
+.board-title {
+  font-family: 'Special Elite', monospace; font-size: 10px; letter-spacing: 2px;
+  text-transform: uppercase; text-align: center; margin-bottom: 10px;
+}
+.board-lib .board-title { color: var(--blue-bright); }
+.board-fas .board-title { color: var(--red-bright); }
+.policy-slots { display: flex; gap: 5px; justify-content: center; }
+
+.policy-tile {
+  width: 36px; height: 54px; border: 2px solid; display: inline-flex; align-items: center;
+  justify-content: center; font-weight: 700; font-size: 14px;
+  font-family: 'Special Elite', monospace; transition: transform .15s;
+}
+.policy-tile.L { background: var(--blue); border-color: var(--blue-bright); color: var(--liberal); }
+.policy-tile.F { background: #5c1010; border-color: var(--red-bright); color: var(--fascist); }
+.policy-tile.empty { background: #0f0a05; border-color: #2a1a08; color: #2a1a08; }
+.policy-tile.power { position: relative; }
+.policy-tile.power::after {
+  content: '⚡'; position: absolute; bottom: -2px; right: -2px; font-size: 9px;
+  background: var(--gold); color: var(--ink); width: 12px; height: 12px;
+  display: flex; align-items: center; justify-content: center;
+}
+
+/* Karty w ręce */
+.hand-cards { display: flex; gap: 14px; justify-content: center; margin: 16px 0; }
+.hand-card {
+  width: 70px; height: 100px; border: 3px solid; display: flex; align-items: center;
+  justify-content: center; font-size: 28px; font-weight: 700; cursor: pointer;
+  font-family: 'Special Elite', monospace; transition: transform .15s, box-shadow .15s;
+  user-select: none;
+}
+.hand-card:hover { transform: translateY(-8px); box-shadow: 0 8px 20px rgba(0,0,0,.5); }
+.hand-card.L { background: var(--blue); border-color: var(--blue-bright); color: var(--liberal); }
+.hand-card.F { background: #5c1010; border-color: var(--red-bright); color: var(--fascist); }
+
+/* ── ELECTION TRACKER ────────────────────────────────────────────────────── */
+.tracker-bar {
+  display: flex; align-items: center; gap: 12px; padding: 8px 14px;
+  background: rgba(0,0,0,.3); border: 1px solid var(--border);
+  flex-wrap: wrap;
+}
+.tracker-label { font-family: 'Special Elite', monospace; font-size: 9px; letter-spacing: 2px; color: var(--text-dim); }
+.tracker-dots { display: flex; gap: 6px; }
+.tracker-dot { width: 14px; height: 14px; border-radius: 50%; border: 2px solid var(--border); background: var(--bg); transition: background .2s; }
+.tracker-dot.filled { background: var(--red-bright); border-color: var(--red-bright); }
+.tracker-info { margin-left: auto; font-size: 11px; color: var(--text-muted); }
+
+/* ── GAME ACTION PANEL ───────────────────────────────────────────────────── */
+.action-panel {
+  background: rgba(0,0,0,.4); border: 1px solid var(--border);
+  padding: 18px; min-height: 200px;
+}
+.action-title {
+  font-family: 'Special Elite', monospace; font-size: 14px; letter-spacing: 3px;
+  text-transform: uppercase; color: var(--gold); text-align: center;
+  margin-bottom: 14px; padding-bottom: 10px; border-bottom: 1px solid rgba(201,162,39,.3);
+}
+.action-desc { font-size: 13px; color: var(--text-dim); line-height: 1.7; margin-bottom: 14px; }
+
+.target-list { display: flex; flex-direction: column; gap: 6px; }
+.target-item {
+  display: flex; align-items: center; gap: 10px; padding: 8px 12px;
+  border: 1px solid var(--border); background: rgba(255,255,255,.02);
+  cursor: pointer; transition: all .12s;
+}
+.target-item:hover { border-color: var(--gold); background: rgba(201,162,39,.08); transform: translateX(4px); }
+.target-item.danger:hover { border-color: var(--red-bright); background: rgba(139,26,26,.15); }
+
+/* Vote buttons */
+.vote-row { display: flex; gap: 14px; justify-content: center; margin: 16px 0; }
+.vote-btn { flex: 1; font-size: 20px; padding: 14px; }
+
+/* ── LOG ─────────────────────────────────────────────────────────────────── */
+.game-log-panel { display: flex; flex-direction: column; flex: 1; min-height: 280px; }
+.game-log {
+  flex: 1;
+  min-height: 280px;
+  max-height: none;
+  overflow-y: auto;
+  padding: 12px 14px;
+  background: rgba(0,0,0,.3);
+  border: 1px solid var(--border);
+}
+.log-entry {
+  font-size: 14px;
+  line-height: 1.6;
+  padding: 6px 0;
+  border-bottom: 1px solid rgba(255,255,255,.04);
+  color: var(--text-dim);
+  font-style: italic;
+}
+.log-entry:first-child { color: var(--cream); }
+
+/* ── ADMIN PANEL ─────────────────────────────────────────────────────────── */
+.admin-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.admin-table th {
+  font-family: 'Special Elite', monospace; font-size: 10px; letter-spacing: 2px;
+  text-transform: uppercase; color: var(--gold); padding: 8px 10px;
+  border-bottom: 1px solid var(--gold-dim); text-align: left;
+}
+.admin-table td { padding: 8px 10px; border-bottom: 1px solid var(--border); }
+.admin-table tr:hover td { background: rgba(255,255,255,.02); }
+
+/* ── MODAL ───────────────────────────────────────────────────────────────── */
+.modal-overlay {
+  position: fixed; inset: 0; background: rgba(0,0,0,.8); display: flex;
+  align-items: center; justify-content: center; z-index: 1000;
+  animation: fadeIn .2s ease;
+}
+.modal {
+  background: var(--bg2); border: 2px solid var(--gold); padding: 32px;
+  max-width: 440px; width: 90%; box-shadow: 6px 6px 0 var(--gold-dim);
+  animation: slideIn .2s ease;
+}
+.modal-title {
+  font-family: 'Special Elite', monospace; font-size: 18px; letter-spacing: 3px;
+  color: var(--gold); text-align: center; margin-bottom: 20px;
+}
+.modal-content { margin-bottom: 20px; line-height: 1.7; }
+.modal-actions { display: flex; gap: 10px; }
+
+.event-modal-body {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.event-modal-lead {
+  font-size: 15px;
+  line-height: 1.7;
+  text-align: center;
+  color: var(--cream);
+}
+.event-highlight {
+  font-family: 'Special Elite', monospace;
+  font-size: 22px;
+  letter-spacing: 2px;
+  text-align: center;
+  color: var(--gold);
+  padding: 14px 12px;
+  border: 1px solid rgba(201,162,39,.35);
+  background: rgba(201,162,39,.08);
+}
+.event-modal-note {
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--text-dim);
+  text-align: center;
+}
+.event-vote-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.event-vote-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 10px;
+  border: 1px solid rgba(255,255,255,.05);
+  background: rgba(255,255,255,.02);
+}
+
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+@keyframes slideIn { from { transform: scale(.93) translateY(-10px); } to { transform: none; } }
+
+/* ── ROLE REVEAL MODAL ───────────────────────────────────────────────────── */
+.role-reveal {
+  text-align: center; padding: 20px 0;
+}
+.role-icon { font-size: 60px; margin-bottom: 12px; }
+.role-name { font-family: 'Special Elite', monospace; font-size: 28px; letter-spacing: 4px; margin-bottom: 16px; }
+.role-info { font-size: 13px; line-height: 1.8; color: var(--text-dim); text-align: left; }
+.role-info strong { color: var(--cream); }
+
+/* ── WIN SCREEN ──────────────────────────────────────────────────────────── */
+.win-screen { text-align: center; padding: 30px; }
+.win-icon { font-size: 72px; margin-bottom: 14px; }
+.win-title {
+  font-family: 'Special Elite', monospace; font-size: clamp(20px, 3vw, 36px);
+  letter-spacing: 4px; text-transform: uppercase; margin-bottom: 10px;
+}
+.win-liberal .win-title { color: var(--liberal); }
+.win-fascist .win-title { color: var(--fascist); }
+.win-reason { color: var(--text-dim); font-size: 14px; margin-bottom: 24px; }
+.win-reveal { text-align: left; margin-bottom: 24px; }
+.win-player {
+  display: flex; justify-content: space-between; align-items: center;
+  gap: 16px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 28px;
+}
+.win-player .badge {
+  font-size: 13px;
+  padding: 6px 10px;
+  letter-spacing: 2px;
+}
+
+/* ── RESPONSIVE ──────────────────────────────────────────────────────────── */
+@media (max-width: 900px) {
+  .main-layout { grid-template-columns: 1fr; grid-template-rows: auto 1fr; height: auto; min-height: 100vh; }
+  .panel-left, .panel-chat { display: none; }
+  .panel-left.mobile-show, .panel-chat.mobile-show { display: flex; }
+  .panel-main { padding: 16px 14px 28px; }
+  .game-layout { min-height: auto; }
+  .game-columns { grid-template-columns: 1fr; }
+  .action-panel { min-height: 0; }
+  .site-header { gap: 12px; padding: 12px 14px; }
+  .site-logo { font-size: 18px; letter-spacing: 2px; }
+  .site-nav, .site-user { width: 100%; margin-left: 0; }
+  .site-user { justify-content: space-between; }
+  .vote-btn { font-size: 18px; }
+  .game-log { min-height: 38vh; }
+}
+@media (max-width: 600px) {
+  .policy-boards { grid-template-columns: 1fr; }
+  .auth-box { width: 95%; padding: 24px; }
+  .policy-board { padding: 10px; }
+  .policy-tile { width: 32px; height: 48px; font-size: 13px; }
+  .tracker-bar { padding: 10px 12px; gap: 8px; }
+  .tracker-label { width: 100%; }
+  .tracker-info { width: 100%; margin-left: 0; font-size: 12px; }
+  .action-title { font-size: 13px; letter-spacing: 2px; }
+  .action-desc { font-size: 14px; line-height: 1.65; }
+  .target-item { padding: 10px 12px; }
+  .vote-row { flex-direction: column; }
+  .vote-btn { width: 100%; font-size: 22px; }
+  .hand-cards { gap: 10px; flex-wrap: wrap; }
+  .hand-card { width: 58px; height: 84px; font-size: 24px; }
+  .player-item { font-size: 13px; padding: 8px 9px; }
+  .badge { font-size: 10px; }
+  .game-log-panel .section-title { font-size: 12px !important; }
+  .game-log { min-height: 44vh; padding: 12px; }
+  .log-entry { font-size: 15px; }
+  .event-modal-lead { font-size: 14px; }
+  .event-highlight { font-size: 18px; padding: 12px 10px; }
+  .event-vote-row { align-items: flex-start; }
+  .win-screen { padding: 18px 8px 28px; }
+  .win-icon { font-size: 64px; }
+  .win-reason { font-size: 15px; line-height: 1.5; }
+  .win-player {
+    font-size: 18px;
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .win-player .badge {
+    font-size: 14px;
+    padding: 7px 10px;
+  }
+}
+
+/* ── MISC ────────────────────────────────────────────────────────────────── */
+.flex { display: flex; }
+.flex-col { display: flex; flex-direction: column; }
+.gap-8 { gap: 8px; }
+.gap-12 { gap: 12px; }
+.items-center { align-items: center; }
+.justify-between { justify-content: space-between; }
+.text-center { text-align: center; }
+.text-gold { color: var(--gold); }
+.text-dim { color: var(--text-dim); }
+.text-red { color: var(--fascist); }
+.text-blue { color: var(--liberal); }
+.mt-8 { margin-top: 8px; }
+.mt-12 { margin-top: 12px; }
+.mt-16 { margin-top: 16px; }
+.mb-8 { margin-bottom: 8px; }
+.mb-12 { margin-bottom: 12px; }
+.italic { font-style: italic; }
+.bold { font-weight: 700; }
+.hidden { display: none !important; }
+hr.divider { border: none; border-top: 1px solid var(--border); margin: 14px 0; }
+.tag { display: inline-block; }
+
+/* Pulsujące oznaczenie online */
+@keyframes blink { 0%,100%{opacity:1} 50%{opacity:.3} }
+.blink { animation: blink 1.5s ease-in-out infinite; }
+
+/* Highlight tur */
+.my-turn {
+  border-color: var(--gold) !important;
+  box-shadow: 0 0 12px rgba(201,162,39,.3);
+  animation: myTurn 2s ease-in-out infinite;
+}
+@keyframes myTurn { 0%,100%{box-shadow:0 0 12px rgba(201,162,39,.3)} 50%{box-shadow:0 0 24px rgba(201,162,39,.6)} }

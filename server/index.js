@@ -268,6 +268,27 @@ app.get('/api/me', async (req, res) => {
   });
 });
 
+app.post('/api/account/change-password', requireAuth, async (req, res) => {
+  try {
+    const { currentPassword, newPassword } = req.body || {};
+    if (!currentPassword || !newPassword) return res.status(400).json({ error: 'Podaj aktualne i nowe hasło' });
+    if (String(newPassword).length < 4) return res.status(400).json({ error: 'Nowe hasło musi mieć min. 4 znaki' });
+
+    const user = await db.users.findById(req.session.userId);
+    if (!user) return res.status(404).json({ error: 'Użytkownik nie istnieje' });
+    if (!bcrypt.compareSync(currentPassword, user.passwordHash)) {
+      return res.status(401).json({ error: 'Aktualne hasło jest nieprawidłowe' });
+    }
+
+    const hash = bcrypt.hashSync(newPassword, 10);
+    await db.users.setPasswordHash(user._id, hash);
+    res.json({ ok: true });
+  } catch (e) {
+    console.error('change password error', e);
+    res.status(500).json({ error: 'Błąd serwera' });
+  }
+});
+
 // ── ADMIN ROUTES ──────────────────────────────────────────────────────────────
 app.get('/api/admin/users', requireAuth, requireAdmin, async (req, res) => {
   const all = await db.users.findAll();
@@ -295,6 +316,25 @@ app.post('/api/admin/users/:id/toggle-admin', requireAuth, requireAdmin, async (
   if (!user) return res.status(404).json({ error: 'Nie znaleziono' });
   await db.users.setAdmin(req.params.id, !user.isAdmin);
   res.json({ ok: true });
+});
+
+app.post('/api/admin/users/:id/reset-password', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const { newPassword } = req.body || {};
+    if (!newPassword) return res.status(400).json({ error: 'Podaj nowe hasło' });
+    if (String(newPassword).length < 4) return res.status(400).json({ error: 'Hasło musi mieć min. 4 znaki' });
+    if (req.params.id === req.session.userId) return res.status(400).json({ error: 'Użyj opcji zmiany własnego hasła' });
+
+    const user = await db.users.findById(req.params.id);
+    if (!user) return res.status(404).json({ error: 'Nie znaleziono' });
+
+    const hash = bcrypt.hashSync(newPassword, 10);
+    await db.users.setPasswordHash(req.params.id, hash);
+    res.json({ ok: true });
+  } catch (e) {
+    console.error('reset password error', e);
+    res.status(500).json({ error: 'Błąd serwera' });
+  }
 });
 
 app.delete('/api/admin/users/:id', requireAuth, requireAdmin, async (req, res) => {

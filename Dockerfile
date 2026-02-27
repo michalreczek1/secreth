@@ -7,6 +7,7 @@ RUN npm install --omit=dev
 
 COPY public ./public
 COPY server ./server
+COPY scripts ./scripts
 COPY README.md ./
 
 ENV NODE_ENV=production

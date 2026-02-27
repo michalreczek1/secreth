@@ -19,6 +19,7 @@ const API = {
   register: (username, password) => API.post('/api/register', { username, password }),
   login: (username, password) => API.post('/api/login', { username, password }),
   logout: () => API.post('/api/logout', {}),
+  changePassword: (currentPassword, newPassword) => API.post('/api/account/change-password', { currentPassword, newPassword }),
   me: () => API.get('/api/me'),
   getRooms: () => API.get('/api/rooms'),
   createRoom: (name) => API.post('/api/rooms', { name }),
@@ -32,5 +33,6 @@ const API = {
   activateUser: (id) => API.post(`/api/admin/users/${id}/activate`, {}),
   deactivateUser: (id) => API.post(`/api/admin/users/${id}/deactivate`, {}),
   toggleAdmin: (id) => API.post(`/api/admin/users/${id}/toggle-admin`, {}),
+  resetUserPassword: (id, newPassword) => API.post(`/api/admin/users/${id}/reset-password`, { newPassword }),
   deleteUser: (id) => API.delete(`/api/admin/users/${id}`),
 };

@@ -1,103 +1,49 @@
-// server/db.js — NeDB (pure JavaScript, działa na Windows bez Visual Studio)
-const Datastore = require('@seald-io/nedb');
 const path = require('path');
-const bcrypt = require('bcryptjs');
-const fs = require('fs');
+const { createNedbStore } = require('./db-nedb');
+const { createPostgresStore } = require('./db-postgres');
 
-const DATA_DIR = path.join(__dirname, '..', 'data');
-fs.mkdirSync(DATA_DIR, { recursive: true });
+const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, '..', 'data');
 
-// ── KOLEKCJE ──────────────────────────────────────────────────────────────────
-const users      = new Datastore({ filename: path.join(DATA_DIR, 'users.db'),       autoload: true });
-const rooms      = new Datastore({ filename: path.join(DATA_DIR, 'rooms.db'),       autoload: true });
-const roomPlayers= new Datastore({ filename: path.join(DATA_DIR, 'room_players.db'),autoload: true });
-const messages   = new Datastore({ filename: path.join(DATA_DIR, 'messages.db'),    autoload: true });
+let activeStorePromise = null;
 
-// Indeksy
-users.ensureIndex({ fieldName: 'username_lower' });
-roomPlayers.ensureIndex({ fieldName: 'roomId' });
+async function getStore() {
+  if (!activeStorePromise) {
+    activeStorePromise = (async () => {
+      if (process.env.DATABASE_URL) {
+        const pgStore = await createPostgresStore({ connectionString: process.env.DATABASE_URL });
+        await pgStore.ensureDefaultAdmin();
+        return pgStore;
+      }
 
-// ── WRAPPER z async/await ─────────────────────────────────────────────────────
+      const nedbStore = createNedbStore({ dataDir: DATA_DIR });
+      await nedbStore.ensureDefaultAdmin();
+      return nedbStore;
+    })();
+  }
+  return activeStorePromise;
+}
+
+function wrapSection(sectionName) {
+  return new Proxy({}, {
+    get(_target, prop) {
+      return async (...args) => {
+        const store = await getStore();
+        const section = store[sectionName];
+        const fn = section[prop];
+        if (typeof fn !== 'function') throw new Error(`Unknown db method: ${sectionName}.${String(prop)}`);
+        return fn(...args);
+      };
+    },
+  });
+}
+
 const db = {
-  users: {
-    findByUsername: (username) => users.findOneAsync({ username_lower: username.toLowerCase() }),
-    findById:       (id)       => users.findOneAsync({ _id: id }),
-    findAll:        ()         => users.findAsync({}).then(r => r.sort((a,b) => a.createdAt > b.createdAt ? -1 : 1)),
-    create:  async (username, passwordHash) => {
-      return users.insertAsync({
-        username,
-        username_lower: username.toLowerCase(),
-        passwordHash,
-        isAdmin: false,
-        isActive: false,
-        createdAt: new Date().toISOString(),
-        lastSeen: null,
-      });
-    },
-    setActive:   (id, v) => users.updateAsync({ _id: id }, { $set: { isActive: v } }, {}),
-    setAdmin:    (id, v) => users.updateAsync({ _id: id }, { $set: { isAdmin: v } }, {}),
-    setLastSeen: (id)    => users.updateAsync({ _id: id }, { $set: { lastSeen: new Date().toISOString() } }, {}),
-    delete:      (id)    => users.removeAsync({ _id: id }, {}),
-  },
-
-  rooms: {
-    findById:  (id) => rooms.findOneAsync({ _id: id }),
-    findAll:   ()   => rooms.findAsync({}).then(r => r.sort((a,b) => a.createdAt > b.createdAt ? -1 : 1)),
-    create: (id, name, ownerId, ownerName) => rooms.insertAsync({
-      _id: id, name, ownerId, ownerName,
-      state: 'lobby',
-      gameData: null,
-      createdAt: new Date().toISOString(),
-    }),
-    setState:  (id, state, gameData) => rooms.updateAsync({ _id: id }, { $set: { state, gameData } }, {}),
-    delete:    (id) => rooms.removeAsync({ _id: id }, {}),
-  },
-
-  roomPlayers: {
-    getPlayersInRoom: async (roomId) => {
-      const rps = await roomPlayers.findAsync({ roomId });
-      rps.sort((a,b) => a.joinedAt > b.joinedAt ? 1 : -1);
-      return rps;
-    },
-    getRoomsForUser: async (userId) => {
-      const rps = await roomPlayers.findAsync({ userId });
-      rps.sort((a,b) => a.joinedAt > b.joinedAt ? -1 : 1);
-      return rps;
-    },
-    isInRoom:  (roomId, userId) => roomPlayers.findOneAsync({ roomId, userId }),
-    add:  async (roomId, userId, username) => {
-      const exists = await roomPlayers.findOneAsync({ roomId, userId });
-      if (!exists) await roomPlayers.insertAsync({ roomId, userId, username, joinedAt: new Date().toISOString() });
-    },
-    remove:       (roomId, userId) => roomPlayers.removeAsync({ roomId, userId }, {}),
-    removeAll:    (roomId)         => roomPlayers.removeAsync({ roomId }, { multi: true }),
-    countInRoom:  (roomId)         => roomPlayers.countAsync({ roomId }),
-  },
-
-  messages: {
-    insert: (roomId, userId, username, message, type = 'chat') =>
-      messages.insertAsync({ roomId: roomId || null, userId, username, message, type, createdAt: new Date().toISOString() }),
-    getRoom:   (roomId) => messages.findAsync({ roomId }).then(r => r.sort((a,b) => a.createdAt > b.createdAt ? -1 : 1).slice(0,100).reverse()),
-    getGlobal: ()       => messages.findAsync({ roomId: null }).then(r => r.sort((a,b) => a.createdAt > b.createdAt ? -1 : 1).slice(0,100).reverse()),
-  },
+  provider: async () => (await getStore()).provider,
+  users: wrapSection('users'),
+  rooms: wrapSection('rooms'),
+  roomPlayers: wrapSection('roomPlayers'),
+  messages: wrapSection('messages'),
+  raw: getStore,
 };
 
-// ── BOOTSTRAP: domyślny admin ─────────────────────────────────────────────────
-(async () => {
-  const admin = await users.findOneAsync({ isAdmin: true });
-  if (!admin) {
-    const hash = bcrypt.hashSync('admin123', 10);
-    await users.insertAsync({
-      username: 'admin',
-      username_lower: 'admin',
-      passwordHash: hash,
-      isAdmin: true,
-      isActive: true,
-      createdAt: new Date().toISOString(),
-      lastSeen: null,
-    });
-    console.log('✅ Domyślny admin: admin / admin123');
-  }
-})();
-
-module.exports = { db };
+module.exports = { db, DATA_DIR, getStore };

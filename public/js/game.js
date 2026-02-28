@@ -12,6 +12,18 @@ const Game = {
   eventModalPending: false,
   lastEventFingerprint: null,
 
+  sameId(a, b) {
+    return String(a) === String(b);
+  },
+
+  getDisplayedVote(state, playerId) {
+    if (!state) return null;
+    const votes = state.votes || {};
+    if (Object.prototype.hasOwnProperty.call(votes, playerId)) return votes[playerId];
+    if (this.sameId(playerId, this.myUserId) && state.myVote) return state.myVote;
+    return null;
+  },
+
   init(roomId, userId) {
     this.roomId = roomId;
     this.myUserId = userId;
@@ -413,7 +425,7 @@ const Game = {
 
   renderPlayersSide(s) {
     const rows = s.players.map((p, i) => {
-      const isMe = p.id === this.myUserId;
+      const isMe = this.sameId(p.id, this.myUserId);
       const isBot = typeof p.id === 'string' && p.id.startsWith('bot:');
       const isPres = i === s.presidentIdx;
       const isChan = i === s.chancellorIdx;
@@ -447,7 +459,7 @@ const Game = {
     const el = document.getElementById('sidebar-players');
     if (!el || !s) return;
     el.innerHTML = s.players.map((p, i) => {
-      const isMe = p.id === this.myUserId;
+      const isMe = this.sameId(p.id, this.myUserId);
       const isBot = typeof p.id === 'string' && p.id.startsWith('bot:');
       const isPres = i === s.presidentIdx;
       const isChan = i === s.chancellorIdx;
@@ -467,12 +479,12 @@ const Game = {
   renderVoteBadge(s, player) {
     if (!s) return '';
     if (s.phase === 'vote') {
-      if (player.id === this.myUserId && s.myVote) return '<span class="badge badge-vote-ja">ODDANY</span>';
+      if (this.sameId(player.id, this.myUserId) && s.myVote) return '<span class="badge badge-vote-ja">ODDANY</span>';
       if (!player.dead) return '<span class="badge badge-vote-pending">...</span>';
       return '';
     }
     if (!s.votes) return '';
-    const vote = s.votes[player.id];
+    const vote = this.getDisplayedVote(s, player.id);
     if (vote === 'Ja') return '<span class="badge badge-vote-ja">JA</span>';
     if (vote === 'Nein') return '<span class="badge badge-vote-nein">NEIN</span>';
     return '';
@@ -530,7 +542,7 @@ const Game = {
     const roleName = isLib ? 'Liberał' : isHit ? 'Hitler' : 'Faszysta';
 
     // Znajdź sojuszników
-    const myFascists = s.players.filter(p => p.role === 'Fascist' && p.id !== this.myUserId).map(p => p.username);
+    const myFascists = s.players.filter(p => p.role === 'Fascist' && !this.sameId(p.id, this.myUserId)).map(p => p.username);
     const hitlerPlayer = s.players.find(p => p.role === 'Hitler');
     const n = s.players.length;
 
@@ -628,15 +640,18 @@ const Game = {
   buildVoteResultModal(prev, next) {
     const president = prev.players[prev.presidentIdx];
     const chancellor = prev.chancellorIdx != null ? prev.players[prev.chancellorIdx] : null;
-    const finalVotes = next.votes || {};
     const votes = prev.players
       .filter(p => !p.dead)
-      .map(p => `
+      .map(p => {
+        const vote = this.getDisplayedVote(next, p.id);
+        const voteClass = vote === 'Ja' ? 'badge-vote-ja' : vote === 'Nein' ? 'badge-vote-nein' : 'badge-vote-pending';
+        return `
         <div class="event-vote-row">
           <span>${UI.escapeHtml(p.username)}</span>
-          <span class="badge ${finalVotes[p.id] === 'Ja' ? 'badge-vote-ja' : 'badge-vote-nein'}">${UI.escapeHtml(finalVotes[p.id] || '—')}</span>
+          <span class="badge ${voteClass}">${UI.escapeHtml(vote || '—')}</span>
         </div>
-      `)
+      `;
+      })
       .join('');
     const passed = next.phase === 'presidentDiscard' || next.phase === 'executive' || next.phase === 'end';
 

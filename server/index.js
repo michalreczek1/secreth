@@ -801,6 +801,14 @@ async function emitPlayerRoomMessage(roomId, userId, username, message) {
   });
 }
 
+function formatClaimSummary(summary) {
+  if (!summary) return '';
+  return String(summary)
+    .split('')
+    .map((card) => card === 'L' ? '🟦' : card === 'F' ? '🟥' : card)
+    .join(' ');
+}
+
 async function persistActiveGameState(roomId) {
   const ag = activeGames.get(roomId);
   if (!ag?.state) return;
@@ -878,7 +886,7 @@ async function submitLegislativeClaim(roomId, userId, summary, skipped = false) 
   const roleLabel = result.claim.role === 'president' ? 'Prezydent' : 'Kanclerz';
   const text = result.claim.skipped
     ? `nie składa deklaracji jako ${roleLabel}.`
-    : `deklaruje jako ${roleLabel}: ${result.claim.summary}`;
+    : `deklaruje jako ${roleLabel}: ${formatClaimSummary(result.claim.summary)}`;
   await emitPlayerRoomMessage(roomId, userId, result.claim.username, text);
 }
 

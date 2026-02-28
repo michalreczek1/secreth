@@ -487,6 +487,9 @@ label { font-size: 12px; color: var(--text-dim); display: block; margin-bottom: 
   display: flex;
   flex-direction: column;
   gap: 10px;
+  max-height: 320px;
+  overflow-y: auto;
+  padding-right: 4px;
 }
 .vote-history-entry {
   border: 1px solid var(--border);
@@ -711,6 +714,61 @@ label { font-size: 12px; color: var(--text-dim); display: block; margin-bottom: 
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
 }
+.claim-summary-tile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 12px;
+  border: 2px solid var(--border);
+  background: rgba(255,255,255,.03);
+  color: var(--cream);
+  cursor: pointer;
+  transition: all .12s;
+}
+.claim-summary-tile:hover {
+  border-color: var(--gold);
+  background: rgba(201,162,39,.08);
+  transform: translateY(-2px);
+}
+.claim-summary-tile.selected {
+  border-color: var(--gold);
+  background: rgba(201,162,39,.14);
+  box-shadow: 0 0 14px rgba(201,162,39,.18);
+}
+.claim-summary-icons {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+.claim-card-chip {
+  width: 34px;
+  height: 48px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid;
+  font-family: 'Special Elite', monospace;
+  font-size: 16px;
+  line-height: 1;
+}
+.claim-card-l {
+  background: var(--blue);
+  border-color: var(--blue-bright);
+  color: var(--liberal);
+}
+.claim-card-f {
+  background: #5c1010;
+  border-color: var(--red-bright);
+  color: var(--fascist);
+}
+.claim-summary-text {
+  font-family: 'Special Elite', monospace;
+  font-size: 11px;
+  letter-spacing: 2px;
+  color: var(--text-dim);
+}
 
 @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
 @keyframes slideIn { from { transform: scale(.93) translateY(-10px); } to { transform: none; } }
@@ -765,6 +823,7 @@ label { font-size: 12px; color: var(--text-dim); display: block; margin-bottom: 
   .vote-btn { font-size: 18px; }
   .game-log { min-height: 38vh; }
   .vote-history-votes { grid-template-columns: 1fr; }
+  .vote-history-list { max-height: 280px; }
   .disconnect-actions { flex-direction: column; }
 }
 @media (max-width: 1200px) {
@@ -807,6 +866,11 @@ label { font-size: 12px; color: var(--text-dim); display: block; margin-bottom: 
   .vote-history-head { flex-direction: column; }
   .vote-history-government { gap: 6px 12px; }
   .claim-option-grid { grid-template-columns: 1fr; }
+  .claim-card-chip {
+    width: 30px;
+    height: 44px;
+    font-size: 15px;
+  }
   .disconnect-text { font-size: 14px; }
   .event-modal-lead { font-size: 14px; }
   .event-highlight { font-size: 18px; padding: 12px 10px; }

@@ -13,6 +13,7 @@ const Game = {
   eventModalPending: false,
   lastEventFingerprint: null,
   shownClaimKey: null,
+  selectedClaimSummary: null,
 
   sameId(a, b) {
     return String(a) === String(b);
@@ -55,6 +56,7 @@ const Game = {
     this.eventModalPending = false;
     this.lastEventFingerprint = null;
     this.shownClaimKey = null;
+    this.selectedClaimSummary = null;
   },
 
   // ── SOCKET EVENTS ──────────────────────────────────────────────────────────
@@ -965,6 +967,7 @@ const Game = {
     const claim = this.state?.pendingClaim;
     if (!claim) return;
     this.shownClaimKey = this.getPendingClaimKey(claim);
+    this.selectedClaimSummary = null;
     this.showClaimModal(claim);
   },
 
@@ -972,9 +975,15 @@ const Game = {
     const isPresident = claim.role === 'president';
     const roleLabel = isPresident ? 'Prezydent' : 'Kanclerz';
     const options = isPresident ? ['LLL', 'LLF', 'LFF', 'FFF'] : ['LL', 'LF', 'FF'];
-    const optionButtons = options.map((summary) => `
-      <button class="btn ${summary.includes('F') ? 'btn-red' : 'btn-blue'} btn-full" onclick="Game.declareClaim('${summary}')">${summary}</button>
-    `).join('');
+    const optionTiles = options.map((summary) => {
+      const isSelected = this.selectedClaimSummary === summary;
+      return `
+        <button class="claim-summary-tile ${isSelected ? 'selected' : ''}" onclick="Game.selectClaimSummary('${summary}')" type="button">
+          <span class="claim-summary-icons">${this.renderClaimSummary(summary)}</span>
+          <span class="claim-summary-text">${summary}</span>
+        </button>
+      `;
+    }).join('');
 
     UI.showModal({
       title: `🎙️ Deklaracja ${roleLabel}`,
@@ -986,14 +995,28 @@ const Game = {
           <div class="claim-modal-note">
             To jest twoja deklaracja dla stołu. System opublikuje ją na czacie pokojowym. Możesz powiedzieć prawdę albo blefować.
           </div>
-          <div class="claim-option-grid">${optionButtons}</div>
+          <div class="claim-option-grid">${optionTiles}</div>
         </div>
       `,
       actions: `
         <button class="btn btn-ghost" style="flex:1" onclick="UI.closeModal()">Później</button>
-        <button class="btn btn-gold" style="flex:1" onclick="Game.declareClaim('', true)">Pomiń deklarację</button>
+        <button class="btn btn-gold" style="flex:1" ${this.selectedClaimSummary ? '' : 'disabled'} onclick="Game.declareClaim(Game.selectedClaimSummary, false)">Zatwierdź</button>
+        <button class="btn btn-red" style="flex:1" onclick="Game.declareClaim('', true)">Pomiń deklarację</button>
       `,
     });
+  },
+
+  renderClaimSummary(summary) {
+    return String(summary)
+      .split('')
+      .map((card) => `<span class="claim-card-chip ${card === 'L' ? 'claim-card-l' : 'claim-card-f'}">${card}</span>`)
+      .join('');
+  },
+
+  selectClaimSummary(summary) {
+    this.selectedClaimSummary = summary;
+    const claim = this.state?.pendingClaim;
+    if (claim) this.showClaimModal(claim);
   },
 
   // ── AKCJE ──────────────────────────────────────────────────────────────────
@@ -1035,6 +1058,7 @@ const Game = {
     if (!this.roomId) return;
     try {
       await Socket.declareClaim(this.roomId, summary, skipped);
+      this.selectedClaimSummary = null;
       UI.closeModal();
     } catch (e) {
       alert(e.message);

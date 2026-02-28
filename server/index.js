@@ -693,6 +693,16 @@ io.on('connection', async (socket) => {
     }
   });
 
+  socket.on('game:declareClaim', async ({ roomId, summary, skipped }, callback) => {
+    try {
+      if (!(await ensureSocketUserActive(callback))) return;
+      await submitLegislativeClaim(roomId, userId, summary, !!skipped);
+      callback?.({ ok: true });
+    } catch (e) {
+      callback?.({ error: e.message });
+    }
+  });
+
   socket.on('game:disconnectDecision', async ({ roomId, choice }, callback) => {
     try {
       if (!(await ensureSocketUserActive(callback))) return;
@@ -779,6 +789,18 @@ async function emitSystemRoomMessage(roomId, message) {
   });
 }
 
+async function emitPlayerRoomMessage(roomId, userId, username, message) {
+  const createdAt = new Date().toISOString();
+  await db.messages.insert(roomId, userId, username, message, 'chat');
+  io.to(`room:${roomId}`).emit('chat:message', {
+    username,
+    message,
+    createdAt,
+    type: 'chat',
+    roomId,
+  });
+}
+
 async function persistActiveGameState(roomId) {
   const ag = activeGames.get(roomId);
   if (!ag?.state) return;
@@ -837,6 +859,47 @@ function buildGameView(roomId, userId) {
   }));
   view.disconnectControl = buildDisconnectView(state, userId);
   return view;
+}
+
+async function submitLegislativeClaim(roomId, userId, summary, skipped = false) {
+  const ag = activeGames.get(roomId);
+  if (!ag?.state) throw new Error('Brak aktywnej gry');
+
+  const player = ag.state.players.find((p) => p.id === userId);
+  if (!player) throw new Error('Nie jesteś graczem tej partii');
+
+  const result = game.submitClaim(ag.state, userId, summary, skipped);
+  ag.state = result.state;
+  ensureGameMetaState(ag.state);
+
+  await persistActiveGameState(roomId);
+  broadcastGameState(roomId);
+
+  const roleLabel = result.claim.role === 'president' ? 'Prezydent' : 'Kanclerz';
+  const text = result.claim.skipped
+    ? `nie składa deklaracji jako ${roleLabel}.`
+    : `deklaruje jako ${roleLabel}: ${result.claim.summary}`;
+  await emitPlayerRoomMessage(roomId, userId, result.claim.username, text);
+}
+
+async function resolveReadyBotClaims(roomId) {
+  const ag = activeGames.get(roomId);
+  if (!ag?.state?.claimSession || ag.state.phase === 'end') return;
+
+  const automated = getAutomatedPlayerIds(roomId);
+  const session = ag.state.claimSession;
+  const pending = [];
+
+  if (session.presidentReady && !session.presidentSubmitted && automated.has(session.presidentId)) {
+    pending.push({ userId: session.presidentId, summary: session.presidentActual || 'LLF' });
+  }
+  if (session.chancellorReady && !session.chancellorSubmitted && automated.has(session.chancellorId)) {
+    pending.push({ userId: session.chancellorId, summary: session.chancellorActual || 'LF' });
+  }
+
+  for (const item of pending) {
+    await submitLegislativeClaim(roomId, item.userId, item.summary, false);
+  }
 }
 
 async function beginDisconnectWait(roomId, targetUserId, durationMs, logMessage = null) {
@@ -1116,6 +1179,7 @@ async function processGameAction(roomId, userId, action, payload = {}) {
   }
 
   broadcastGameState(roomId);
+  await resolveReadyBotClaims(roomId);
 
   if (newState.winner) {
     io.emit('rooms:updated');

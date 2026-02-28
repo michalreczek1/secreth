@@ -72,6 +72,53 @@ function allAlivePlayersVoted(state) {
   return alivePlayers.every(p => state.votes?.[p.id] !== undefined);
 }
 
+function summarizePolicies(cards) {
+  if (!Array.isArray(cards) || cards.length === 0) return '';
+  const liberalCount = cards.filter(card => card === 'L').length;
+  const fascistCount = cards.length - liberalCount;
+  return `${'L'.repeat(liberalCount)}${'F'.repeat(fascistCount)}`;
+}
+
+function createClaimSession(state) {
+  const president = state.players[state.presidentIdx];
+  const chancellor = state.chancellorIdx != null ? state.players[state.chancellorIdx] : null;
+  if (!president || !chancellor) return null;
+  return {
+    sessionId: randomUUID(),
+    presidentId: president.id,
+    presidentName: president.username,
+    presidentReady: false,
+    presidentSubmitted: false,
+    presidentActual: null,
+    chancellorId: chancellor.id,
+    chancellorName: chancellor.username,
+    chancellorReady: false,
+    chancellorSubmitted: false,
+    chancellorActual: null,
+  };
+}
+
+function appendVoteHistory(state, votes, passed) {
+  const alivePlayers = state.players.filter(p => !p.dead);
+  const president = state.players[state.presidentIdx];
+  const chancellor = state.chancellorIdx != null ? state.players[state.chancellorIdx] : null;
+  const entry = {
+    id: randomUUID(),
+    createdAt: new Date().toISOString(),
+    presidentId: president?.id || null,
+    presidentName: president?.username || '',
+    chancellorId: chancellor?.id || null,
+    chancellorName: chancellor?.username || '',
+    passed: !!passed,
+    votes: alivePlayers.map((player) => ({
+      userId: player.id,
+      username: player.username,
+      vote: votes[player.id] || null,
+    })),
+  };
+  return [entry, ...(state.voteHistory || [])].slice(0, 20);
+}
+
 // ── TWORZENIE GRY ─────────────────────────────────────────────────────────────
 function createGame(playerList) {
   // playerList: [{id, username}]
@@ -115,6 +162,8 @@ function createGame(playerList) {
     winner: null,
     winReason: '',
     log: [],
+    voteHistory: [],
+    claimSession: null,
   };
 }
 
@@ -228,6 +277,7 @@ function vote(state, userId, choice) {
 
   // Ujawnij głosy w logu
   const voteStr = alivePlayers.map(p => `${p.username}: ${newVotes[p.id]}`).join(', ');
+  s = { ...s, voteHistory: appendVoteHistory(s, newVotes, passed) };
   s = addLog(s, `🗳️ Głosy: ${voteStr}`);
   s = addLog(s, `🗳️ Wynik: ${ja} Ja / ${nein} Nein — ${passed ? 'PRZESZŁO ✅' : 'ODRZUCONO ❌'}`);
 
@@ -242,12 +292,12 @@ function vote(state, userId, choice) {
   const chan = s.players[s.chancellorIdx];
   if (s.fas >= 3 && chan.role === 'Hitler') {
     s = addLog(s, `💀 Hitler (${chan.username}) wybrany Kanclerzem po 3+ faszystowskich ustawach!`);
-    return { ...s, phase: 'end', winner: 'Fascist', winReason: `Hitler (${chan.username}) wybrany Kanclerzem!` };
+    return { ...s, phase: 'end', winner: 'Fascist', winReason: `Hitler (${chan.username}) wybrany Kanclerzem!`, claimSession: null };
   }
 
   // Dobierz 3 karty dla Prezydenta
   const { drawn, deck, discard } = drawCards(s.deck, s.discard, 3);
-  return addLog({ ...s, presidentHand: drawn, deck, discard, phase: 'presidentDiscard' },
+  return addLog({ ...s, presidentHand: drawn, deck, discard, phase: 'presidentDiscard', claimSession: createClaimSession(s) },
     `✅ Rząd zatwierdzony! ${s.players[s.presidentIdx].username} dobiera karty.`);
 }
 
@@ -259,8 +309,15 @@ function presidentDiscard(state, userId, cardIndex) {
 
   const discarded = state.presidentHand[cardIndex];
   const kept = state.presidentHand.filter((_, i) => i !== cardIndex);
+  const claimSession = state.claimSession
+    ? {
+        ...state.claimSession,
+        presidentReady: true,
+        presidentActual: summarizePolicies(state.presidentHand),
+      }
+    : null;
 
-  let s = addLog({ ...state, hand: kept, presidentHand: [], discard: [...state.discard, discarded], phase: 'chancellorDiscard' },
+  let s = addLog({ ...state, hand: kept, presidentHand: [], discard: [...state.discard, discarded], phase: 'chancellorDiscard', claimSession },
     `🤫 Prezydent ${presPlayer.username} odrzucił kartę`);
   return s;
 }
@@ -273,8 +330,15 @@ function chancellorDiscard(state, userId, cardIndex) {
 
   const discarded = state.hand[cardIndex];
   const enacted = state.hand.find((_, i) => i !== cardIndex);
+  const claimSession = state.claimSession
+    ? {
+        ...state.claimSession,
+        chancellorReady: true,
+        chancellorActual: summarizePolicies(state.hand),
+      }
+    : null;
 
-  let s = addLog({ ...state, hand: [], discard: [...state.discard, discarded] },
+  let s = addLog({ ...state, hand: [], discard: [...state.discard, discarded], claimSession },
     `📜 Kanclerz ${chanPlayer.username} uchwala ustawę`);
   return enact(s, enacted);
 }
@@ -284,7 +348,14 @@ function proposeVeto(state, userId) {
   if (state.fas < 5) throw new Error('Veto niedostępne (potrzeba 5 faszystowskich ustaw)');
   const chanPlayer = state.players[state.chancellorIdx];
   if (chanPlayer.id !== userId) throw new Error('Nie jesteś Kanclerzem');
-  let s = addLog({ ...state, phase: 'veto' }, `🚫 ${chanPlayer.username} proponuje VETO!`);
+  const claimSession = state.claimSession
+    ? {
+        ...state.claimSession,
+        chancellorReady: true,
+        chancellorActual: summarizePolicies(state.hand),
+      }
+    : null;
+  let s = addLog({ ...state, phase: 'veto', claimSession }, `🚫 ${chanPlayer.username} proponuje VETO!`);
   return s;
 }
 
@@ -385,6 +456,40 @@ function finishPeekAction(state, userId) {
   return advance(state, state.spOrigin != null, { recordGovernment: true });
 }
 
+function submitClaim(state, userId, summary, skipped = false) {
+  if (!state.claimSession) throw new Error('Brak aktywnej deklaracji');
+
+  const session = { ...state.claimSession };
+  const isPresident = session.presidentId === userId;
+  const isChancellor = session.chancellorId === userId;
+  if (!isPresident && !isChancellor) throw new Error('Ta deklaracja nie należy do ciebie');
+
+  const role = isPresident ? 'president' : 'chancellor';
+  const readyKey = isPresident ? 'presidentReady' : 'chancellorReady';
+  const submittedKey = isPresident ? 'presidentSubmitted' : 'chancellorSubmitted';
+  const actualKey = isPresident ? 'presidentActual' : 'chancellorActual';
+  const expectedOptions = isPresident ? ['LLL', 'LLF', 'LFF', 'FFF'] : ['LL', 'LF', 'FF'];
+  if (!session[readyKey]) throw new Error('Twoja deklaracja nie jest jeszcze gotowa');
+  if (session[submittedKey]) throw new Error('Deklaracja została już wysłana');
+  if (!skipped && !expectedOptions.includes(summary)) throw new Error('Nieprawidłowa deklaracja');
+
+  session[submittedKey] = true;
+  const nextState = { ...state, claimSession: session };
+
+  return {
+    state: nextState,
+    claim: {
+      sessionId: session.sessionId,
+      role,
+      userId,
+      username: isPresident ? session.presidentName : session.chancellorName,
+      summary: skipped ? null : summary,
+      skipped: !!skipped,
+      actualSummary: session[actualKey] || null,
+    },
+  };
+}
+
 // ── WIDOK DLA GRACZA (ukrywa role innych) ─────────────────────────────────────
 function getPlayerView(state, userId) {
   const myIdx = state.players.findIndex(p => p.id === userId);
@@ -411,6 +516,25 @@ function getPlayerView(state, userId) {
   // Karty widoczne tylko dla właściwego gracza
   const isPresident = me && state.players[state.presidentIdx]?.id === userId;
   const isChancellor = me && state.chancellorIdx !== null && state.players[state.chancellorIdx]?.id === userId;
+  let pendingClaim = null;
+  if (state.claimSession) {
+    const session = state.claimSession;
+    if (session.presidentId === userId && session.presidentReady && !session.presidentSubmitted) {
+      pendingClaim = {
+        sessionId: session.sessionId,
+        role: 'president',
+        username: session.presidentName,
+        optionCount: 3,
+      };
+    } else if (session.chancellorId === userId && session.chancellorReady && !session.chancellorSubmitted) {
+      pendingClaim = {
+        sessionId: session.sessionId,
+        role: 'chancellor',
+        username: session.chancellorName,
+        optionCount: 2,
+      };
+    }
+  }
 
   return {
     gameId: state.gameId,
@@ -427,6 +551,7 @@ function getPlayerView(state, userId) {
     winner: state.winner,
     winReason: state.winReason,
     log: state.log,
+    voteHistory: state.voteHistory || [],
     votes: state.phase === 'vote' && !allAlivePlayersVoted(state) ? {} : state.votes,
     votesSubmitted: getVotesSubmitted(state),
     myVote: me ? state.votes?.[me.id] || null : null,
@@ -440,6 +565,7 @@ function getPlayerView(state, userId) {
     myRole: me ? me.role : null,
     deckSize: state.deck.length,
     discardSize: state.discard.length,
+    pendingClaim,
   };
 }
 
@@ -448,6 +574,6 @@ module.exports = {
   nominate, vote, presidentDiscard, chancellorDiscard,
   proposeVeto, respondVeto,
   executePeek, executeInvestigate, executeSpecialElection, executeKill,
-  finishPeekAction, getPlayerView,
+  finishPeekAction, submitClaim, getPlayerView,
   CONFIGS,
 };

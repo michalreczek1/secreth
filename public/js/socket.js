@@ -111,6 +111,15 @@ const Socket = {
     }));
   },
 
+  declareClaim(roomId, summary, skipped = false) {
+    return withSocketAck(() => new Promise((resolve, reject) => {
+      sock.emit('game:declareClaim', { roomId, summary, skipped }, (res) => {
+        if (res?.error) reject(new Error(res.error));
+        else resolve(res);
+      });
+    }));
+  },
+
   disconnectDecision(roomId, choice) {
     return withSocketAck(() => new Promise((resolve, reject) => {
       sock.emit('game:disconnectDecision', { roomId, choice }, (res) => {

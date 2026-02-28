@@ -12,6 +12,7 @@ const Game = {
   eventModalQueue: [],
   eventModalPending: false,
   lastEventFingerprint: null,
+  shownClaimKey: null,
 
   sameId(a, b) {
     return String(a) === String(b);
@@ -53,6 +54,7 @@ const Game = {
     this.eventModalQueue = [];
     this.eventModalPending = false;
     this.lastEventFingerprint = null;
+    this.shownClaimKey = null;
   },
 
   // ── SOCKET EVENTS ──────────────────────────────────────────────────────────
@@ -63,6 +65,7 @@ const Game = {
     this.updateDisconnectTicker();
     this.handleStateEvents(prevState, state);
     this.maybeRevealRole();
+    this.maybePromptPendingClaim();
   },
 
   onPeek(cards) {
@@ -97,6 +100,7 @@ const Game = {
           ${this.renderActionPanel(s)}
           ${this.renderPlayersSide(s)}
         </div>
+        ${this.renderVoteHistory(s)}
         ${this.renderLog(s)}
       </div>
     `;
@@ -273,7 +277,19 @@ const Game = {
         <div class="action-title">
           ${this.phaseTitle(s.phase)}
         </div>
+        ${this.renderPendingClaimNotice(s)}
         ${content}
+      </div>
+    `;
+  },
+
+  renderPendingClaimNotice(s) {
+    if (!s.pendingClaim) return '';
+    const roleLabel = s.pendingClaim.role === 'president' ? 'Prezydent' : 'Kanclerz';
+    return `
+      <div class="notice notice-info">
+        Masz do złożenia publiczną deklarację kart jako <strong>${roleLabel}</strong>.
+        <button class="btn btn-gold btn-sm" style="margin-top:8px" onclick="Game.openPendingClaimModal()">Złóż deklarację</button>
       </div>
     `;
   },
@@ -592,6 +608,44 @@ const Game = {
     `;
   },
 
+  renderVoteHistory(s) {
+    const entries = (s.voteHistory || []).map((entry) => {
+      const votes = (entry.votes || []).map((vote) => `
+        <div class="vote-history-player">
+          <span class="vote-history-name">${UI.escapeHtml(vote.username)}</span>
+          ${this.renderVoteHistoryChip(vote.vote)}
+        </div>
+      `).join('');
+      return `
+        <div class="vote-history-entry ${entry.passed ? 'passed' : 'failed'}">
+          <div class="vote-history-head">
+            <div class="vote-history-government">
+              <span>Prezydent: <strong>${UI.escapeHtml(entry.presidentName || '—')}</strong></span>
+              <span>Kanclerz: <strong>${UI.escapeHtml(entry.chancellorName || '—')}</strong></span>
+            </div>
+            <span class="badge ${entry.passed ? 'badge-vote-ja' : 'badge-vote-nein'}">${entry.passed ? 'PRZESZŁO' : 'ODRZUCONO'}</span>
+          </div>
+          <div class="vote-history-votes">${votes}</div>
+        </div>
+      `;
+    }).join('');
+
+    return `
+      <div class="vote-history-panel">
+        <div class="section-title" style="font-size:10px;margin-bottom:6px">Historia Głosowań</div>
+        <div class="vote-history-list">
+          ${entries || '<div class="vote-history-empty">Brak zakończonych głosowań w tej partii.</div>'}
+        </div>
+      </div>
+    `;
+  },
+
+  renderVoteHistoryChip(vote) {
+    if (vote === 'Ja') return '<span class="vote-history-chip vote-history-chip-ja">🕊️ JA</span>';
+    if (vote === 'Nein') return '<span class="vote-history-chip vote-history-chip-nein">☠️ NEIN</span>';
+    return '<span class="vote-history-chip vote-history-chip-pending">—</span>';
+  },
+
   renderWin(s) {
     const libWin = s.winner === 'Liberal';
     const roleRows = s.players.map(p => {
@@ -890,6 +944,58 @@ const Game = {
     setTimeout(() => this.flushEventModalQueue(), 50);
   },
 
+  getPendingClaimKey(claim = this.state?.pendingClaim) {
+    if (!claim) return null;
+    return `${claim.sessionId}:${claim.role}`;
+  },
+
+  maybePromptPendingClaim() {
+    const claim = this.state?.pendingClaim;
+    const key = this.getPendingClaimKey(claim);
+    if (!claim || !key || this.shownClaimKey === key || this.state?.winner) return;
+    if (document.getElementById('modal-overlay')) {
+      setTimeout(() => this.maybePromptPendingClaim(), 250);
+      return;
+    }
+    this.shownClaimKey = key;
+    this.showClaimModal(claim);
+  },
+
+  openPendingClaimModal() {
+    const claim = this.state?.pendingClaim;
+    if (!claim) return;
+    this.shownClaimKey = this.getPendingClaimKey(claim);
+    this.showClaimModal(claim);
+  },
+
+  showClaimModal(claim) {
+    const isPresident = claim.role === 'president';
+    const roleLabel = isPresident ? 'Prezydent' : 'Kanclerz';
+    const options = isPresident ? ['LLL', 'LLF', 'LFF', 'FFF'] : ['LL', 'LF', 'FF'];
+    const optionButtons = options.map((summary) => `
+      <button class="btn ${summary.includes('F') ? 'btn-red' : 'btn-blue'} btn-full" onclick="Game.declareClaim('${summary}')">${summary}</button>
+    `).join('');
+
+    UI.showModal({
+      title: `🎙️ Deklaracja ${roleLabel}`,
+      content: `
+        <div class="claim-modal-body">
+          <div class="event-modal-lead">
+            Wybierz, co publicznie deklarujesz pozostałym graczom jako <strong>${roleLabel}</strong>.
+          </div>
+          <div class="claim-modal-note">
+            To jest twoja deklaracja dla stołu. System opublikuje ją na czacie pokojowym. Możesz powiedzieć prawdę albo blefować.
+          </div>
+          <div class="claim-option-grid">${optionButtons}</div>
+        </div>
+      `,
+      actions: `
+        <button class="btn btn-ghost" style="flex:1" onclick="UI.closeModal()">Później</button>
+        <button class="btn btn-gold" style="flex:1" onclick="Game.declareClaim('', true)">Pomiń deklarację</button>
+      `,
+    });
+  },
+
   // ── AKCJE ──────────────────────────────────────────────────────────────────
 
   async action(name, payload = {}) {
@@ -920,6 +1026,16 @@ const Game = {
     if (!this.roomId) return;
     try {
       await Socket.disconnectDecision(this.roomId, choice);
+    } catch (e) {
+      alert(e.message);
+    }
+  },
+
+  async declareClaim(summary, skipped = false) {
+    if (!this.roomId) return;
+    try {
+      await Socket.declareClaim(this.roomId, summary, skipped);
+      UI.closeModal();
     } catch (e) {
       alert(e.message);
     }

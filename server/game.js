@@ -1,5 +1,7 @@
 // server/game.js — pełna logika Secret Hitlera
 
+const { randomUUID } = require('crypto');
+
 const DECK = [...Array(11).fill('F'), ...Array(6).fill('L')];
 
 const CONFIGS = {
@@ -73,6 +75,7 @@ function createGame(playerList) {
   }));
 
   return {
+    gameId: randomUUID(),
     players,
     deck: shuffle([...DECK]),
     discard: [],
@@ -392,6 +395,7 @@ function getPlayerView(state, userId) {
   const isChancellor = me && state.chancellorIdx !== null && state.players[state.chancellorIdx]?.id === userId;
 
   return {
+    gameId: state.gameId,
     players,
     lib: state.lib,
     fas: state.fas,

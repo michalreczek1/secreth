@@ -40,6 +40,7 @@ const App = {
     this.setActiveRoom(null);
     this.roomPlayers = [];
     Chat.setRoom(null);
+    Game.reset();
   },
 
   updateHeaderRoomAction() {
@@ -87,6 +88,7 @@ const App = {
   },
   onGameReset() {
     this.currentRoomState = 'lobby';
+    Game.reset();
     this.updateHeaderRoomAction();
     this.showRoom(this.currentRoomId, true);
   },
@@ -179,6 +181,7 @@ const App = {
     Socket.leaveRoom();
     Socket.disconnect();
     this.currentUser = null;
+    Chat.closeMobileChat();
     this.clearActiveRoom();
     document.getElementById('app').innerHTML = '';
     this.showAuth('login');
@@ -197,6 +200,11 @@ const App = {
             ${this.currentUser?.isAdmin ? `<button class="btn btn-ghost btn-sm" onclick="App.showAdmin()">⚙️ Admin</button>` : ''}
           </nav>
           <div class="site-user">
+            <button class="btn btn-ghost btn-sm" onclick="App.showChangePassword()">🔐 Hasło</button>
+            <button class="btn btn-ghost btn-sm mobile-chat-toggle" onclick="Chat.openMobileChat()" id="mobile-chat-toggle">
+              💬 Chat
+              <span class="mobile-chat-badge hidden" id="mobile-chat-badge">0</span>
+            </button>
             <span id="conn-status" style="font-size:11px;color:#4a8">🟢 Online</span>
             <span class="user-badge">${UI.escapeHtml(this.currentUser.username)}</span>
             ${this.currentUser.isAdmin ? '<span class="admin-badge">Admin</span>' : ''}
@@ -240,6 +248,7 @@ const App = {
   async showLobby() {
     this.currentView = 'lobby';
     Chat.setRoom(null);
+    Game.reset();
 
     const el = document.getElementById('panel-main');
     if (!el) return;
@@ -368,6 +377,7 @@ const App = {
     if (this.currentRoomId && this.currentRoomId !== roomId && this.currentRoomState !== 'playing') {
       Socket.leaveRoom();
       this.roomPlayers = [];
+      Game.reset();
     }
     if (!skipSocket) {
       try {
@@ -423,6 +433,8 @@ const App = {
       // State zostanie odebrane przez socket
       return;
     }
+
+    Game.reset();
 
     // Lobby view
     const isOwner = room.ownerId === this.currentUser.id;
@@ -554,6 +566,7 @@ const App = {
     if (!this.currentUser?.isAdmin) return;
     this.currentView = 'admin';
     Chat.setRoom(null);
+    Game.reset();
     const el = document.getElementById('panel-main');
     if (!el) return;
 
@@ -567,6 +580,61 @@ const App = {
     `;
 
     Admin.load();
+  },
+
+  showChangePassword() {
+    UI.showModal({
+      title: '🔐 Zmiana Hasła',
+      content: `
+        <div style="display:flex;flex-direction:column;gap:12px">
+          <div>
+            <label>Aktualne hasło</label>
+            <input type="password" id="account-current-password" autocomplete="current-password" />
+          </div>
+          <div>
+            <label>Nowe hasło</label>
+            <input type="password" id="account-new-password" autocomplete="new-password" />
+          </div>
+          <div>
+            <label>Powtórz nowe hasło</label>
+            <input type="password" id="account-repeat-password" autocomplete="new-password" />
+          </div>
+          <div id="account-password-notice"></div>
+        </div>
+      `,
+      actions: `
+        <button class="btn btn-gold" style="flex:1" onclick="App.changePassword()">Zapisz</button>
+        <button class="btn btn-ghost" style="flex:1" onclick="UI.closeModal()">Anuluj</button>
+      `,
+    });
+  },
+
+  async changePassword() {
+    const currentPassword = document.getElementById('account-current-password')?.value || '';
+    const newPassword = document.getElementById('account-new-password')?.value || '';
+    const repeatPassword = document.getElementById('account-repeat-password')?.value || '';
+    const notice = document.getElementById('account-password-notice');
+
+    if (!currentPassword || !newPassword || !repeatPassword) {
+      if (notice) notice.innerHTML = UI.notice('Wypełnij wszystkie pola.', 'error');
+      return;
+    }
+    if (newPassword !== repeatPassword) {
+      if (notice) notice.innerHTML = UI.notice('Nowe hasła nie są takie same.', 'error');
+      return;
+    }
+
+    const res = await API.changePassword(currentPassword, newPassword);
+    if (res.error) {
+      if (notice) notice.innerHTML = UI.notice(UI.escapeHtml(res.error), 'error');
+      return;
+    }
+
+    UI.showModal({
+      title: '✅ Hasło Zmienione',
+      content: '<div class="notice notice-success">Twoje hasło zostało zmienione.</div>',
+      actions: `<button class="btn btn-gold btn-full" onclick="UI.closeModal()">Zamknij</button>`,
+    });
   },
 };
 

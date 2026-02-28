@@ -6,34 +6,37 @@ const Game = {
   myUserId: null,
   peekCards: null,
   investigateResult: null,
-  roleRevealed: false,
+  revealedGameId: null,
+  roleRevealTimer: null,
   eventModalQueue: [],
   eventModalPending: false,
   lastEventFingerprint: null,
 
   init(roomId, userId) {
-    const roomChanged = this.roomId !== roomId || this.myUserId !== userId;
     this.roomId = roomId;
     this.myUserId = userId;
     this.peekCards = null;
     this.investigateResult = null;
 
-    if (roomChanged) {
-      this.roleRevealed = false;
-      this.eventModalQueue = [];
-      this.eventModalPending = false;
-      this.lastEventFingerprint = null;
-    }
-
     // `game:state` can arrive before the DOM for the game view exists.
     // Preserve the pending state and render it once the view is mounted.
     if (this.state) {
       this.render();
-      if (!this.roleRevealed && this.state.myRole) {
-        this.roleRevealed = true;
-        setTimeout(() => this.showRoleModal(), 300);
-      }
+      this.maybeRevealRole();
     }
+  },
+
+  reset() {
+    if (this.roleRevealTimer) clearTimeout(this.roleRevealTimer);
+    this.state = null;
+    this.roomId = null;
+    this.myUserId = null;
+    this.peekCards = null;
+    this.investigateResult = null;
+    this.roleRevealTimer = null;
+    this.eventModalQueue = [];
+    this.eventModalPending = false;
+    this.lastEventFingerprint = null;
   },
 
   // ── SOCKET EVENTS ──────────────────────────────────────────────────────────
@@ -42,11 +45,7 @@ const Game = {
     this.state = state;
     this.render();
     this.handleStateEvents(prevState, state);
-    // Pierwsza aktualizacja — pokaż rolę
-    if (!this.roleRevealed && state.myRole) {
-      this.roleRevealed = true;
-      setTimeout(() => this.showRoleModal(), 300);
-    }
+    this.maybeRevealRole();
   },
 
   onPeek(cards) {
@@ -85,6 +84,20 @@ const Game = {
     `;
 
     this.renderSidebarPlayers(s);
+  },
+
+  maybeRevealRole() {
+    const s = this.state;
+    const main = document.getElementById('game-main');
+    if (!s || !main || !s.myRole || !s.gameId || s.winner) return;
+    if (this.revealedGameId === s.gameId || this.roleRevealTimer) return;
+
+    this.roleRevealTimer = setTimeout(() => {
+      this.roleRevealTimer = null;
+      if (!this.state || this.state.gameId !== s.gameId || this.revealedGameId === s.gameId) return;
+      this.revealedGameId = s.gameId;
+      this.showRoleModal();
+    }, 300);
   },
 
   renderBoards(s) {

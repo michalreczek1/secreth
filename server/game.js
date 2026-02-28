@@ -53,6 +53,15 @@ function nextAlive(players, from) {
   return from;
 }
 
+function getVotesSubmitted(state) {
+  return Object.keys(state.votes || {}).length;
+}
+
+function allAlivePlayersVoted(state) {
+  const alivePlayers = state.players.filter(p => !p.dead);
+  return alivePlayers.every(p => state.votes?.[p.id] !== undefined);
+}
+
 // ── TWORZENIE GRY ─────────────────────────────────────────────────────────────
 function createGame(playerList) {
   // playerList: [{id, username}]
@@ -82,7 +91,7 @@ function createGame(playerList) {
     lib: 0,
     fas: 0,
     electionTracker: 0,
-    presidentIdx: 0,
+    presidentIdx: Math.floor(Math.random() * players.length),
     chancellorIdx: null,
     prevPresidentIdx: null,
     prevChancellorIdx: null,
@@ -112,14 +121,15 @@ function checkWin(state) {
   return state;
 }
 
-function advance(state, fromSpecial = false) {
+function advance(state, fromSpecial = false, options = {}) {
+  const { recordGovernment = true, resetTermLimits = false } = options;
   const from = (fromSpecial && state.spOrigin != null) ? state.spOrigin : state.presidentIdx;
   const nextIdx = nextAlive(state.players, from);
   return {
     ...state,
     presidentIdx: nextIdx,
-    prevPresidentIdx: state.presidentIdx,
-    prevChancellorIdx: state.chancellorIdx,
+    prevPresidentIdx: resetTermLimits ? null : (recordGovernment ? state.presidentIdx : state.prevPresidentIdx),
+    prevChancellorIdx: resetTermLimits ? null : (recordGovernment ? state.chancellorIdx : state.prevChancellorIdx),
     chancellorIdx: null,
     phase: 'nominate',
     execPower: null,
@@ -140,7 +150,7 @@ function applyChaos(state) {
   s = checkWin(s);
   if (s.winner) return s;
   // Chaos resetuje do normalnej rotacji
-  return advance(s, false);
+  return advance(s, s.spOrigin != null, { recordGovernment: false, resetTermLimits: true });
 }
 
 function enact(state, type) {
@@ -159,7 +169,7 @@ function enact(state, type) {
       return { ...s, phase: 'executive', execPower: pw };
     }
   }
-  return advance(s, s.spOrigin != null);
+  return advance(s, s.spOrigin != null, { recordGovernment: true });
 }
 
 // ── AKCJE GRACZA ─────────────────────────────────────────────────────────────
@@ -215,8 +225,7 @@ function vote(state, userId, choice) {
     s.electionTracker = s.electionTracker + 1;
     if (s.electionTracker >= 3) return applyChaos(s);
     // Przesuń prezydenturę do następnego (bez resetowania ograniczeń kadencji)
-    const nextIdx = nextAlive(s.players, s.presidentIdx);
-    return { ...s, presidentIdx: nextIdx, prevPresidentIdx: s.presidentIdx, prevChancellorIdx: s.chancellorIdx, chancellorIdx: null, phase: 'nominate', votes: {} };
+    return advance(s, s.spOrigin != null, { recordGovernment: false });
   }
 
   // Przeszło — sprawdź Hitler win
@@ -283,8 +292,7 @@ function respondVeto(state, userId, accept) {
   let s = addLog({ ...state, hand: [], discard: [...state.discard, ...state.hand], electionTracker: state.electionTracker + 1 },
     `🚫 VETO zaakceptowane! Tor Wyborów: ${state.electionTracker + 1}/3`);
   if (s.electionTracker >= 3) return applyChaos(s);
-  const nextIdx = nextAlive(s.players, s.presidentIdx);
-  return { ...s, presidentIdx: nextIdx, prevPresidentIdx: s.presidentIdx, prevChancellorIdx: s.chancellorIdx, chancellorIdx: null, phase: 'nominate', votes: {} };
+  return advance(s, s.spOrigin != null, { recordGovernment: false });
 }
 
 // ── MOCE WYKONAWCZE ───────────────────────────────────────────────────────────
@@ -358,13 +366,13 @@ function executeKill(state, userId, targetIdx) {
     return { ...s, phase: 'end', winner: 'Liberal', winReason: `Hitler (${target.username}) został zamordowany!` };
   }
   // Rola zabitego pozostaje tajna!
-  return advance(s, s.spOrigin != null);
+  return advance(s, s.spOrigin != null, { recordGovernment: true });
 }
 
 // Po peek — przesuń kadencję
 function finishPeekAction(state) {
   if (state.phase !== 'executiveDone') return state;
-  return advance(state, state.spOrigin != null);
+  return advance(state, state.spOrigin != null, { recordGovernment: true });
 }
 
 // ── WIDOK DLA GRACZA (ukrywa role innych) ─────────────────────────────────────
@@ -409,7 +417,9 @@ function getPlayerView(state, userId) {
     winner: state.winner,
     winReason: state.winReason,
     log: state.log,
-    votes: state.votes, // ujawniane po zebraniu wszystkich
+    votes: state.phase === 'vote' && !allAlivePlayersVoted(state) ? {} : state.votes,
+    votesSubmitted: getVotesSubmitted(state),
+    myVote: me ? state.votes?.[me.id] || null : null,
     investigated: state.investigated,
     spOrigin: state.spOrigin,
     // Karty tylko dla danej roli

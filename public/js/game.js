@@ -237,8 +237,8 @@ const Game = {
   renderVote(s, me) {
     const president = s.players[s.presidentIdx];
     const chancellor = s.chancellorIdx != null ? s.players[s.chancellorIdx] : null;
-    const myVote = me ? s.votes?.[me.id] : null;
-    const votedCount = Object.keys(s.votes || {}).length;
+    const myVote = s.myVote || null;
+    const votedCount = Number(s.votesSubmitted || 0);
     const aliveCount = s.players.filter(p => !p.dead).length;
 
     if (myVote) {
@@ -465,11 +465,16 @@ const Game = {
   },
 
   renderVoteBadge(s, player) {
-    if (!s?.votes) return '';
+    if (!s) return '';
+    if (s.phase === 'vote') {
+      if (player.id === this.myUserId && s.myVote) return '<span class="badge badge-vote-ja">ODDANY</span>';
+      if (!player.dead) return '<span class="badge badge-vote-pending">...</span>';
+      return '';
+    }
+    if (!s.votes) return '';
     const vote = s.votes[player.id];
     if (vote === 'Ja') return '<span class="badge badge-vote-ja">JA</span>';
     if (vote === 'Nein') return '<span class="badge badge-vote-nein">NEIN</span>';
-    if (s.phase === 'vote' && !player.dead) return '<span class="badge badge-vote-pending">...</span>';
     return '';
   },
 
@@ -623,12 +628,13 @@ const Game = {
   buildVoteResultModal(prev, next) {
     const president = prev.players[prev.presidentIdx];
     const chancellor = prev.chancellorIdx != null ? prev.players[prev.chancellorIdx] : null;
+    const finalVotes = next.votes || {};
     const votes = prev.players
       .filter(p => !p.dead)
       .map(p => `
         <div class="event-vote-row">
           <span>${UI.escapeHtml(p.username)}</span>
-          <span class="badge ${prev.votes[p.id] === 'Ja' ? 'badge-vote-ja' : 'badge-vote-nein'}">${UI.escapeHtml(prev.votes[p.id] || '—')}</span>
+          <span class="badge ${finalVotes[p.id] === 'Ja' ? 'badge-vote-ja' : 'badge-vote-nein'}">${UI.escapeHtml(finalVotes[p.id] || '—')}</span>
         </div>
       `)
       .join('');

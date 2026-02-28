@@ -9,9 +9,12 @@ const App = {
   currentRoomState: null,
   roomPlayers: [],
   rooms: [],
+  deferredInstallPrompt: null,
+  pwaSetupDone: false,
 
   // ── INIT ─────────────────────────────────────────────────────────────────────
   async init() {
+    this.setupPwa();
     const { user, activeRoom } = await API.me();
     if (user) {
       this.currentUser = user;
@@ -41,6 +44,76 @@ const App = {
     this.roomPlayers = [];
     Chat.setRoom(null);
     Game.reset();
+  },
+
+  setupPwa() {
+    if (this.pwaSetupDone) return;
+    this.pwaSetupDone = true;
+
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('/sw.js').catch((e) => {
+          console.error('service worker registration failed', e);
+        });
+      }, { once: true });
+    }
+
+    window.addEventListener('beforeinstallprompt', (event) => {
+      event.preventDefault();
+      this.deferredInstallPrompt = event;
+      this.updateInstallButton();
+    });
+
+    window.addEventListener('appinstalled', () => {
+      this.deferredInstallPrompt = null;
+      this.updateInstallButton();
+    });
+  },
+
+  isStandalone() {
+    return window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+  },
+
+  isIos() {
+    return /iPad|iPhone|iPod/.test(window.navigator.userAgent) && !window.MSStream;
+  },
+
+  updateInstallButton() {
+    const btn = document.getElementById('install-app-btn');
+    if (!btn) return;
+    const supported = !!this.deferredInstallPrompt || (this.isIos() && !this.isStandalone());
+    btn.classList.toggle('hidden', !supported || this.isStandalone());
+  },
+
+  async promptInstall() {
+    if (this.deferredInstallPrompt) {
+      const prompt = this.deferredInstallPrompt;
+      prompt.prompt();
+      try {
+        await prompt.userChoice;
+      } finally {
+        this.deferredInstallPrompt = null;
+        this.updateInstallButton();
+      }
+      return;
+    }
+
+    if (this.isIos() && !this.isStandalone()) {
+      UI.showModal({
+        title: '💀 Zainstaluj Na Telefonie',
+        content: `
+          <div style="display:flex;flex-direction:column;gap:12px">
+            <div>Na iPhone/iPad otwórz menu <strong>Udostępnij</strong> w Safari.</div>
+            <div>Następnie wybierz <strong>Do ekranu początkowego</strong>.</div>
+            <div class="notice notice-info">Po instalacji aplikacja uruchomi się z własną ikoną trupiej czaszki.</div>
+          </div>
+        `,
+        actions: `<button class="btn btn-gold btn-full" onclick="UI.closeModal()">Rozumiem</button>`,
+      });
+      return;
+    }
+
+    alert('Instalacja aplikacji nie jest teraz dostępna na tym urządzeniu/przeglądarce.');
   },
 
   updateHeaderRoomAction() {
@@ -200,6 +273,7 @@ const App = {
             ${this.currentUser?.isAdmin ? `<button class="btn btn-ghost btn-sm" onclick="App.showAdmin()">⚙️ Admin</button>` : ''}
           </nav>
           <div class="site-user">
+            <button class="btn btn-ghost btn-sm hidden" id="install-app-btn" onclick="App.promptInstall()">💀 Zainstaluj</button>
             <button class="btn btn-ghost btn-sm" onclick="App.showChangePassword()">🔐 Hasło</button>
             <button class="btn btn-ghost btn-sm mobile-chat-toggle" onclick="Chat.openMobileChat()" id="mobile-chat-toggle">
               💬 Chat
@@ -242,6 +316,7 @@ const App = {
     Chat.init();
     Socket.getChatHistory(null);
     this.updateHeaderRoomAction();
+    this.updateInstallButton();
   },
 
   // ── LOBBY ─────────────────────────────────────────────────────────────────────

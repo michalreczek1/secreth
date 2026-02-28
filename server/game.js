@@ -190,9 +190,9 @@ function addLog(state, msg) {
 
 function checkWin(state) {
   if (state.lib >= 5)
-    return { ...state, phase: 'end', winner: 'Liberal', winReason: 'Uchwalono 5 Liberalnych Ustaw!' };
+    return { ...state, phase: 'end', winner: 'Liberal', winReason: 'Uchwalono 5 Liberalnych Ustaw!', claimSessions: [] };
   if (state.fas >= 6)
-    return { ...state, phase: 'end', winner: 'Fascist', winReason: 'Uchwalono 6 Faszystowskich Ustaw!' };
+    return { ...state, phase: 'end', winner: 'Fascist', winReason: 'Uchwalono 6 Faszystowskich Ustaw!', claimSessions: [] };
   return state;
 }
 
@@ -308,7 +308,7 @@ function vote(state, userId, choice) {
   const chan = s.players[s.chancellorIdx];
   if (s.fas >= 3 && chan.role === 'Hitler') {
     s = addLog(s, `💀 Hitler (${chan.username}) wybrany Kanclerzem po 3+ faszystowskich ustawach!`);
-    return { ...s, phase: 'end', winner: 'Fascist', winReason: `Hitler (${chan.username}) wybrany Kanclerzem!` };
+    return { ...s, phase: 'end', winner: 'Fascist', winReason: `Hitler (${chan.username}) wybrany Kanclerzem!`, claimSessions: [] };
   }
 
   // Dobierz 3 karty dla Prezydenta
@@ -452,7 +452,7 @@ function executeKill(state, userId, targetIdx) {
   let s = addLog({ ...state, players: newPlayers }, `💀 ${presPlayer.username} skazuje na śmierć ${target.username}!`);
 
   if (target.role === 'Hitler') {
-    return { ...s, phase: 'end', winner: 'Liberal', winReason: `Hitler (${target.username}) został zamordowany!` };
+    return { ...s, phase: 'end', winner: 'Liberal', winReason: `Hitler (${target.username}) został zamordowany!`, claimSessions: [] };
   }
   // Rola zabitego pozostaje tajna!
   return advance(s, s.spOrigin != null, { recordGovernment: true });

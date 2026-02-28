@@ -7,6 +7,7 @@ const App = {
   currentRoomOwner: null,
   currentRoomName: null,
   currentRoomState: null,
+  currentRoomPlayerCount: 0,
   roomPlayers: [],
   rooms: [],
   deferredInstallPrompt: null,
@@ -36,6 +37,7 @@ const App = {
     this.currentRoomOwner = room?.ownerId || null;
     this.currentRoomName = room?.name || null;
     this.currentRoomState = room?.state || null;
+    this.currentRoomPlayerCount = typeof room?.playerCount === 'number' ? room.playerCount : 0;
     this.updateHeaderRoomAction();
   },
 
@@ -151,6 +153,7 @@ const App = {
   onRoomsUpdated() { if (this.currentView === 'lobby') this.loadRooms(); },
   onRoomPlayers(players) {
     this.roomPlayers = Array.isArray(players) ? players : [];
+    this.currentRoomPlayerCount = this.roomPlayers.length;
     if (this.currentView === 'room') this.renderRoomPlayers(this.roomPlayers);
   },
   onRoomDeleted() {
@@ -518,9 +521,11 @@ const App = {
 
     // Lobby view
     const isOwner = room.ownerId === this.currentUser.id;
-    const players = await this.getRoomPlayers(roomId, room.playerCount);
+    this.currentRoomPlayerCount = typeof room.playerCount === 'number' ? room.playerCount : this.currentRoomPlayerCount;
+    const players = await this.getRoomPlayers(roomId);
+    const effectiveCount = this.getEffectiveRoomPlayerCount(players);
     const botCount = players.filter(p => typeof p.id === 'string' && p.id.startsWith('bot:')).length;
-    const canStart = isOwner && players.length >= 5 && players.length <= 10;
+    const canStart = isOwner && effectiveCount >= 5 && effectiveCount <= 10;
     const canManageBots = room.state === 'lobby' && (isOwner || this.currentUser?.isAdmin);
 
     el.innerHTML = `
@@ -535,15 +540,15 @@ const App = {
           <div class="section-title">Gracze w pokoju</div>
           <div id="room-players-list"></div>
           <div class="text-dim" style="font-size:12px;margin-top:10px">
-            Wymagane: 5-10 graczy. Aktualnie: <strong id="player-count-display">${players.length}</strong>
+            Wymagane: 5-10 graczy. Aktualnie: <strong id="player-count-display">${effectiveCount}</strong>
           </div>
         </div>
 
         ${isOwner ? `
           <div class="box" style="margin-top:12px">
             <div class="section-title">Kontrola (Właściciel)</div>
-            ${!canStart ? `<div class="notice notice-warn">Potrzeba min. 5 graczy. Aktualnie: ${players.length}</div>` : ''}
-            <button class="btn btn-gold btn-full" ${!canStart ? 'disabled' : ''} onclick="App.startGame()">
+            <div id="room-owner-warning" class="notice notice-warn" style="${canStart ? 'display:none' : ''}">Potrzeba min. 5 graczy. Aktualnie: ${effectiveCount}</div>
+            <button id="room-start-btn" class="btn btn-gold btn-full" ${!canStart ? 'disabled' : ''} onclick="App.startGame()">
               🎮 Rozpocznij Grę
             </button>
           </div>
@@ -557,12 +562,12 @@ const App = {
           <div class="box" style="margin-top:12px">
             <div class="section-title">Boty Testowe</div>
             <div class="text-dim" style="font-size:12px">
-              Boty w pokoju: <strong>${botCount}</strong> · Łącznie graczy: <strong>${players.length}</strong>/10
+              Boty w pokoju: <strong id="bot-count-display">${players.length > 0 ? botCount : effectiveCount === 0 ? 0 : '...'}</strong> · Łącznie graczy: <strong id="room-total-count-display">${effectiveCount}</strong>/10
             </div>
             <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">
-              <button class="btn btn-ghost btn-sm" ${players.length >= 10 ? 'disabled' : ''} onclick="App.addBots(1)">+ 1 bot</button>
-              <button class="btn btn-ghost btn-sm" ${players.length >= 5 || players.length >= 10 ? 'disabled' : ''} onclick="App.fillBotsToMinimum()">Uzupełnij do 5</button>
-              <button class="btn btn-danger btn-sm" ${botCount === 0 ? 'disabled' : ''} onclick="App.removeBots()">Usuń boty</button>
+              <button id="room-add-bot-btn" class="btn btn-ghost btn-sm" ${effectiveCount >= 10 ? 'disabled' : ''} onclick="App.addBots(1)">+ 1 bot</button>
+              <button id="room-fill-bots-btn" class="btn btn-ghost btn-sm" ${effectiveCount >= 5 || effectiveCount >= 10 ? 'disabled' : ''} onclick="App.fillBotsToMinimum()">Uzupełnij do 5</button>
+              <button id="room-remove-bots-btn" class="btn btn-danger btn-sm" ${players.length > 0 && botCount === 0 ? 'disabled' : ''} onclick="App.removeBots()">Usuń boty</button>
             </div>
             <div class="text-dim" style="font-size:12px;margin-top:10px">
               Boty działają tylko w lobby i po starcie wykonują ruchy automatycznie.
@@ -580,20 +585,30 @@ const App = {
     this.renderRoomPlayers(players);
   },
 
-  async getRoomPlayers(roomId, fallbackCount = 0) {
+  async getRoomPlayers(roomId) {
     if (roomId !== this.currentRoomId) return [];
     if (Array.isArray(this.roomPlayers) && this.roomPlayers.length > 0) return this.roomPlayers;
-    return Array.from({ length: fallbackCount }, (_, i) => ({ id: `placeholder:${i}`, username: 'Ładowanie...' }));
+    return [];
+  },
+
+  getEffectiveRoomPlayerCount(players = []) {
+    if (Array.isArray(players) && players.length > 0) return players.length;
+    return this.currentRoomPlayerCount || 0;
   },
 
   renderRoomPlayers(players) {
     const el = document.getElementById('room-players-list');
     const sideEl = document.getElementById('sidebar-players');
     const countEl = document.getElementById('player-count-display');
+    const effectiveCount = this.getEffectiveRoomPlayerCount(players);
+    const hasActualPlayers = Array.isArray(players) && players.length > 0;
+    const displayPlayers = hasActualPlayers
+      ? players
+      : Array.from({ length: this.currentRoomPlayerCount || 0 }, (_, i) => ({ id: `placeholder:${i}`, username: 'Ładowanie...' }));
 
-    if (countEl) countEl.textContent = players.length;
+    if (countEl) countEl.textContent = String(effectiveCount);
 
-    const rows = players.map(p => {
+    const rows = displayPlayers.map(p => {
       const isPlaceholder = typeof p.id === 'string' && p.id.startsWith('placeholder:');
       const isMe = p.id === this.currentUser.id;
       const isBot = typeof p.id === 'string' && p.id.startsWith('bot:');
@@ -606,9 +621,30 @@ const App = {
     if (el) el.innerHTML = rows || '<div class="text-dim italic" style="font-size:13px">Brak graczy</div>';
     if (sideEl) sideEl.innerHTML = rows || '<div class="text-dim italic" style="font-size:12px;padding:8px">Brak graczy</div>';
 
-    // Update start button
-    const startBtn = document.querySelector('[onclick="App.startGame()"]');
-    if (startBtn) startBtn.disabled = players.filter(p => !(typeof p.id === 'string' && p.id.startsWith('placeholder:'))).length < 5;
+    const startBtn = document.getElementById('room-start-btn');
+    if (startBtn) startBtn.disabled = effectiveCount < 5 || effectiveCount > 10;
+
+    const ownerWarning = document.getElementById('room-owner-warning');
+    if (ownerWarning) {
+      const shouldWarn = effectiveCount < 5 || effectiveCount > 10;
+      ownerWarning.style.display = shouldWarn ? '' : 'none';
+      ownerWarning.textContent = `Potrzeba min. 5 graczy. Aktualnie: ${effectiveCount}`;
+    }
+
+    const botCount = hasActualPlayers
+      ? players.filter(p => typeof p.id === 'string' && p.id.startsWith('bot:')).length
+      : null;
+    const botCountEl = document.getElementById('bot-count-display');
+    if (botCountEl) botCountEl.textContent = botCount == null ? '...' : String(botCount);
+    const totalCountEl = document.getElementById('room-total-count-display');
+    if (totalCountEl) totalCountEl.textContent = String(effectiveCount);
+
+    const addBotBtn = document.getElementById('room-add-bot-btn');
+    if (addBotBtn) addBotBtn.disabled = effectiveCount >= 10;
+    const fillBotsBtn = document.getElementById('room-fill-bots-btn');
+    if (fillBotsBtn) fillBotsBtn.disabled = effectiveCount >= 5 || effectiveCount >= 10;
+    const removeBotsBtn = document.getElementById('room-remove-bots-btn');
+    if (removeBotsBtn) removeBotsBtn.disabled = botCount == null ? true : botCount === 0;
   },
 
   async startGame() {

@@ -106,15 +106,20 @@ const Chat = {
     else this.switchTab('global');
   },
 
+  isRelevantToActiveTab(msg) {
+    if (this.activeTab === 'global') return !(msg.global === false && msg.roomId);
+    if (this.activeTab === 'room') return !(msg.global || !msg.roomId);
+    return true;
+  },
+
   onMessage(msg) {
+    if (!this.isRelevantToActiveTab(msg)) return;
+
     if (this.isCompactLayout() && !this.mobileOpen) {
       this.unreadCount += 1;
       this.updateMobileBadge();
       return;
     }
-
-    if (this.activeTab === 'global' && !msg.global && msg.roomId) return;
-    if (this.activeTab === 'room' && (msg.global || !msg.roomId)) return;
 
     this.appendMessage(msg);
   },

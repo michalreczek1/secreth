@@ -42,7 +42,7 @@ app.use(sessionMiddleware);
 io.engine.use(sessionMiddleware);
 
 // ── PAMIĘĆ OPERACYJNA ─────────────────────────────────────────────────────────
-// roomId → { state: GameState, playerSockets: {userId: socketId} }
+// roomId → { state: GameState, playerSockets: {userId: socketId[]} }
 const activeGames  = new Map();
 // socketId → { userId, username, roomId }
 const socketUsers  = new Map();
@@ -156,6 +156,39 @@ function getGameBotIds(roomId) {
   const ag = activeGames.get(roomId);
   if (!ag?.state?.players) return new Set();
   return new Set(ag.state.players.filter(p => isBotId(p.id)).map(p => p.id));
+}
+
+function ensurePlayerSocketMap(ag) {
+  if (!ag.playerSockets || typeof ag.playerSockets !== 'object') ag.playerSockets = {};
+  return ag.playerSockets;
+}
+
+function getPlayerSocketIds(ag, userId) {
+  const sockets = ensurePlayerSocketMap(ag)[userId];
+  if (!sockets) return [];
+  return Array.isArray(sockets) ? sockets : [sockets];
+}
+
+function addPlayerSocket(ag, userId, socketId) {
+  const sockets = getPlayerSocketIds(ag, userId).filter(Boolean);
+  if (!sockets.includes(socketId)) sockets.push(socketId);
+  ensurePlayerSocketMap(ag)[userId] = sockets;
+}
+
+function removePlayerSocket(ag, userId, socketId) {
+  const sockets = getPlayerSocketIds(ag, userId).filter((sid) => sid && sid !== socketId);
+  if (sockets.length) {
+    ensurePlayerSocketMap(ag)[userId] = sockets;
+    return sockets;
+  }
+  delete ensurePlayerSocketMap(ag)[userId];
+  return [];
+}
+
+function emitToPlayerSockets(ag, userId, eventName, payload) {
+  for (const sid of getPlayerSocketIds(ag, userId)) {
+    io.to(sid).emit(eventName, payload);
+  }
 }
 
 function ensureGameMetaState(state) {
@@ -581,8 +614,7 @@ io.on('connection', async (socket) => {
           } else {
             await persistActiveGameState(roomId);
           }
-          if (!ag.playerSockets) ag.playerSockets = {};
-          ag.playerSockets[userId] = socket.id;
+          addPlayerSocket(ag, userId, socket.id);
           broadcastGameState(roomId);
           await ensureDisconnectWorkflow(roomId);
         }
@@ -657,7 +689,7 @@ io.on('connection', async (socket) => {
 
       const ag = { state, playerSockets: {} };
       for (const [sid, su] of socketUsers.entries()) {
-        if (su.roomId === roomId) ag.playerSockets[su.userId] = sid;
+        if (su.roomId === roomId) addPlayerSocket(ag, su.userId, sid);
       }
       activeGames.set(roomId, ag);
       await db.rooms.setState(roomId, 'playing', JSON.stringify(state));
@@ -748,11 +780,13 @@ io.on('connection', async (socket) => {
         ensureGameMetaState(ag.state);
         const p = ag.state.players.find(p => p.id === su.userId);
         if (p) {
-          p.connected = false;
-          if (ag.playerSockets) delete ag.playerSockets[su.userId];
+          const remainingSockets = removePlayerSocket(ag, su.userId, socket.id);
+          if (remainingSockets.length === 0) {
+            p.connected = false;
+            await ensureDisconnectWorkflow(su.roomId);
+          }
           await persistActiveGameState(su.roomId);
           broadcastGameState(su.roomId);
-          await ensureDisconnectWorkflow(su.roomId);
         }
       }
     }
@@ -1067,8 +1101,7 @@ function broadcastGameState(roomId) {
   const ag = activeGames.get(roomId);
   if (!ag) return;
   for (const player of ag.state.players) {
-    const sid = ag.playerSockets[player.id];
-    if (sid) io.to(sid).emit('game:state', buildGameView(roomId, player.id));
+    emitToPlayerSockets(ag, player.id, 'game:state', buildGameView(roomId, player.id));
   }
   if (shouldBotsPlay(roomId)) scheduleBots(roomId, 500);
 }
@@ -1179,13 +1212,11 @@ async function processGameAction(roomId, userId, action, payload = {}) {
   if (extra.peek) {
     const presPlayer = newState.players[newState.presidentIdx]
       || ag.state.players.find(p => p.id === userId);
-    const presSid = ag.playerSockets[presPlayer?.id || userId];
-    if (presSid) io.to(presSid).emit('game:peek', extra.peek);
+    emitToPlayerSockets(ag, presPlayer?.id || userId, 'game:peek', extra.peek);
   }
 
   if (extra.party) {
-    const presSid = ag.playerSockets[userId];
-    if (presSid) io.to(presSid).emit('game:investigateResult', {
+    emitToPlayerSockets(ag, userId, 'game:investigateResult', {
       party: extra.party, username: extra.targetUsername,
     });
   }

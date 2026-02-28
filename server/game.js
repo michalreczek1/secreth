@@ -470,7 +470,13 @@ function submitClaim(state, userId, sessionId, summary, skipped = false) {
   const sessions = getClaimSessions(state);
   if (!sessions.length) throw new Error('Brak aktywnej deklaracji');
 
-  const sessionIndex = sessions.findIndex((session) => session.sessionId === sessionId);
+  let sessionIndex = sessions.findIndex((session) => session.sessionId === sessionId);
+  if (sessionIndex < 0) {
+    sessionIndex = sessions.findIndex((session) =>
+      (session.presidentId === userId && session.presidentReady && !session.presidentSubmitted) ||
+      (session.chancellorId === userId && session.chancellorReady && !session.chancellorSubmitted)
+    );
+  }
   if (sessionIndex < 0) throw new Error('Deklaracja nie jest już dostępna');
 
   const session = { ...sessions[sessionIndex] };

@@ -14,6 +14,7 @@ const Game = {
   lastEventFingerprint: null,
   shownClaimKey: null,
   selectedClaimSummary: null,
+  activeClaimPrompt: null,
 
   sameId(a, b) {
     return String(a) === String(b);
@@ -57,12 +58,14 @@ const Game = {
     this.lastEventFingerprint = null;
     this.shownClaimKey = null;
     this.selectedClaimSummary = null;
+    this.activeClaimPrompt = null;
   },
 
   // ── SOCKET EVENTS ──────────────────────────────────────────────────────────
   onState(state) {
     const prevState = this.state;
     this.state = state;
+    if (!state?.pendingClaim) this.activeClaimPrompt = null;
     this.render();
     this.updateDisconnectTicker();
     this.handleStateEvents(prevState, state);
@@ -960,6 +963,7 @@ const Game = {
       return;
     }
     this.shownClaimKey = key;
+    this.activeClaimPrompt = { ...claim };
     this.showClaimModal(claim);
   },
 
@@ -968,6 +972,7 @@ const Game = {
     if (!claim) return;
     this.shownClaimKey = this.getPendingClaimKey(claim);
     this.selectedClaimSummary = null;
+    this.activeClaimPrompt = { ...claim };
     this.showClaimModal(claim);
   },
 
@@ -1000,8 +1005,8 @@ const Game = {
       `,
       actions: `
         <button class="btn btn-ghost" style="flex:1" onclick="UI.closeModal()">Później</button>
-        <button class="btn btn-gold" style="flex:1" ${this.selectedClaimSummary ? '' : 'disabled'} onclick="Game.declareClaim(Game.selectedClaimSummary, false)">Zatwierdź</button>
-        <button class="btn btn-red" style="flex:1" onclick="Game.declareClaim('', true)">Pomiń deklarację</button>
+        <button class="btn btn-gold" style="flex:1" ${this.selectedClaimSummary ? '' : 'disabled'} onclick="Game.declareClaim('${claim.sessionId}', Game.selectedClaimSummary, false)">Zatwierdź</button>
+        <button class="btn btn-red" style="flex:1" onclick="Game.declareClaim('${claim.sessionId}', '', true)">Pomiń deklarację</button>
       `,
     });
   },
@@ -1015,7 +1020,7 @@ const Game = {
 
   selectClaimSummary(summary) {
     this.selectedClaimSummary = summary;
-    const claim = this.state?.pendingClaim;
+    const claim = this.activeClaimPrompt || this.state?.pendingClaim;
     if (claim) this.showClaimModal(claim);
   },
 
@@ -1054,13 +1059,13 @@ const Game = {
     }
   },
 
-  async declareClaim(summary, skipped = false) {
+  async declareClaim(sessionId, summary, skipped = false) {
     if (!this.roomId) return;
-    const claim = this.state?.pendingClaim;
-    if (!claim?.sessionId) return;
+    if (!sessionId) return;
     try {
-      await Socket.declareClaim(this.roomId, claim.sessionId, summary, skipped);
+      await Socket.declareClaim(this.roomId, sessionId, summary, skipped);
       this.selectedClaimSummary = null;
+      this.activeClaimPrompt = null;
       UI.closeModal();
     } catch (e) {
       alert(e.message);

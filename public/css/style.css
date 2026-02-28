@@ -411,8 +411,32 @@ label { font-size: 12px; color: var(--text-dim); display: block; margin-bottom: 
 .target-item.danger:hover { border-color: var(--red-bright); background: rgba(139,26,26,.15); }
 
 /* Vote buttons */
-.vote-row { display: flex; gap: 14px; justify-content: center; margin: 16px 0; }
-.vote-btn { flex: 1; font-size: 20px; padding: 14px; }
+.vote-row {
+  display: flex;
+  gap: 14px;
+  justify-content: center;
+  margin: 16px 0;
+  flex-wrap: wrap;
+}
+.vote-btn {
+  flex: 1 1 180px;
+  min-width: 0;
+  font-size: 20px;
+  padding: 14px 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  text-align: center;
+}
+.vote-btn-icon {
+  flex: 0 0 auto;
+  line-height: 1;
+  font-family: "Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji", sans-serif;
+}
+.vote-btn-label {
+  min-width: 0;
+}
 
 /* ── LOG ─────────────────────────────────────────────────────────────────── */
 .game-log-panel { display: flex; flex-direction: column; flex: 1; min-height: 280px; }
@@ -557,6 +581,14 @@ label { font-size: 12px; color: var(--text-dim); display: block; margin-bottom: 
   .site-user { justify-content: space-between; }
   .vote-btn { font-size: 18px; }
   .game-log { min-height: 38vh; }
+}
+@media (max-width: 1200px) {
+  .vote-row { gap: 10px; }
+  .vote-btn {
+    flex-basis: 150px;
+    font-size: 18px;
+    padding: 12px 14px;
+  }
 }
 @media (max-width: 600px) {
   .policy-boards { grid-template-columns: 1fr; }

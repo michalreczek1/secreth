@@ -273,8 +273,14 @@ const Game = {
         🏛️ <strong>${UI.escapeHtml(chancellor?.username)}</strong> (Kanclerz)
       </div>
       <div class="vote-row">
-        <button class="btn btn-blue vote-btn" onclick="Game.action('vote', {choice:'Ja'})">✅ JA!</button>
-        <button class="btn btn-red vote-btn" onclick="Game.action('vote', {choice:'Nein'})">❌ NEIN!</button>
+        <button class="btn btn-blue vote-btn" onclick="Game.action('vote', {choice:'Ja'})">
+          <span class="vote-btn-icon" aria-hidden="true">✅</span>
+          <span class="vote-btn-label">JA!</span>
+        </button>
+        <button class="btn btn-red vote-btn" onclick="Game.action('vote', {choice:'Nein'})">
+          <span class="vote-btn-icon" aria-hidden="true">❌</span>
+          <span class="vote-btn-label">NEIN!</span>
+        </button>
       </div>
       <div class="text-dim text-center" style="font-size:11px">Głos oddany: ${votedCount}/${aliveCount}</div>
     `;

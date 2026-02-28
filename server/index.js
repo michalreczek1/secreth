@@ -723,6 +723,18 @@ function chooseBotDiscard(cards, role, discardForLiberal) {
   return preferred >= 0 ? preferred : 0;
 }
 
+function shouldBotProposeVeto(state, chancellor) {
+  if (!state?.canVeto && state?.fas < 5) return false;
+  if (!Array.isArray(state.hand) || state.hand.length !== 2 || !chancellor) return false;
+
+  const liberalCount = state.hand.filter(c => c === 'L').length;
+  const fascistCount = state.hand.filter(c => c === 'F').length;
+
+  if (chancellor.role === 'Liberal') return fascistCount === 2;
+  if (chancellor.role === 'Hitler') return liberalCount === 2 && Math.random() < 0.35;
+  return liberalCount === 2 && Math.random() < 0.6;
+}
+
 function chooseBotExecutiveTarget(state, mode) {
   const candidates = state.players
     .map((p, i) => ({ ...p, i }))
@@ -848,6 +860,10 @@ async function runBotTurn(roomId) {
     case 'chancellorDiscard': {
       const chancellor = state.players[state.chancellorIdx];
       if (chancellor && botIds.has(chancellor.id)) {
+        if (state.fas >= 5 && shouldBotProposeVeto(state, chancellor)) {
+          await processGameAction(roomId, chancellor.id, 'proposeVeto', {});
+          break;
+        }
         const discardIdx = chooseBotDiscard(state.hand, chancellor.role, chancellor.role === 'Liberal');
         await processGameAction(roomId, chancellor.id, 'chancellorDiscard', { cardIndex: discardIdx });
       }

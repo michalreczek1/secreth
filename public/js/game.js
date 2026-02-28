@@ -113,12 +113,15 @@ const Game = {
     const dots = [0,1,2].map(i =>
       `<div class="tracker-dot ${i < s.electionTracker ? 'filled' : ''}"></div>`
     ).join('');
+    const vetoHint = s.canVeto
+      ? '<span style="color:var(--fascist);font-size:11px;margin-left:8px">⚠️ VETO aktywne: tylko Kanclerz może je zaproponować w swojej turze</span>'
+      : '';
     return `
       <div class="tracker-bar">
         <span class="tracker-label">Tor Wyborów</span>
         <div class="tracker-dots">${dots}</div>
         <span class="tracker-info">Talia: ${s.deckSize} | Odrzucone: ${s.discardSize}</span>
-        ${s.canVeto ? '<span style="color:var(--fascist);font-size:11px;margin-left:8px">⚠️ VETO dostępne</span>' : ''}
+        ${vetoHint}
       </div>
     `;
   },
@@ -276,7 +279,12 @@ const Game = {
   renderChancellorDiscard(s, iAmChancellor) {
     const president = s.players[s.presidentIdx];
     if (!iAmChancellor) {
-      return `<div class="action-desc text-dim italic">Kanclerz wybiera ustawę do uchwalenia...</div>`;
+      return `
+        <div class="action-desc text-dim italic">
+          Kanclerz wybiera ustawę do uchwalenia...
+          ${s.canVeto ? '<br><span style="font-size:12px;color:var(--fascist)">Przy 5 ustawach faszystowskich tylko Kanclerz może zaproponować VETO. Prezydent odpowie dopiero po propozycji.</span>' : ''}
+        </div>
+      `;
     }
     if (!s.chancellorHand || s.chancellorHand.length === 0) {
       return `<div class="action-desc text-dim italic">Ładowanie kart...</div>`;
@@ -294,6 +302,9 @@ const Game = {
       <div class="text-dim text-center" style="font-size:11px">Kliknij kartę aby ją odrzucić</div>
       ${s.canVeto ? `
         <hr class="divider" style="margin:16px 0">
+        <div class="notice notice-warn" style="margin-bottom:10px">
+          VETO odrzuca obie pozostałe ustawy tylko wtedy, gdy Prezydent je zaakceptuje.
+        </div>
         <button class="btn btn-danger btn-full btn-sm" onclick="Game.action('proposeVeto')">
           🚫 Zaproponuj VETO (odrzuć obie karty)
         </button>
@@ -382,8 +393,8 @@ const Game = {
   renderExecutiveDone(s, iAmPresident) {
     if (!iAmPresident) return `<div class="action-desc text-dim italic">Prezydent zakończył działanie...</div>`;
     return `
-      <div class="action-desc">Działanie wykonawcze zakończone.<br><span class="text-dim" style="font-size:12px">Możesz podzielić się odkryciem z innymi graczami (lub skłamać!).</span></div>
-      <button class="btn btn-gold btn-full" style="margin-top:14px" onclick="Game.action('finishPeek')">Kontynuuj grę →</button>
+      <div class="action-desc">Działanie wykonawcze zakończone.<br><span class="text-dim" style="font-size:12px">Możesz teraz omówić wynik z innymi graczami albo blefować. Gra ruszy dopiero po potwierdzeniu.</span></div>
+      <button class="btn btn-gold btn-full" style="margin-top:14px" onclick="Game.action('finishPeek')">Zamknij akcję i kontynuuj →</button>
     `;
   },
 

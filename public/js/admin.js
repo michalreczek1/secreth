@@ -89,14 +89,22 @@ const Admin = {
   },
 
   async activate(id) {
-    await API.activateUser(id);
+    const res = await API.activateUser(id);
+    if (res.error) {
+      alert(`Nie udało się aktywować konta: ${res.error}`);
+      return;
+    }
     await this.load();
   },
 
   async deactivate(id, name) {
     const ok = await UI.confirm(`Deaktywować konto <strong>${UI.escapeHtml(name)}</strong>? Użytkownik nie będzie mógł się zalogować.`);
     if (!ok) return;
-    await API.deactivateUser(id);
+    const res = await API.deactivateUser(id);
+    if (res.error) {
+      alert(`Nie udało się zdezaktywować konta: ${res.error}`);
+      return;
+    }
     await this.load();
   },
 
@@ -104,14 +112,22 @@ const Admin = {
     const action = isAdmin ? `zabrać uprawnienia admina` : `nadać uprawnienia admina`;
     const ok = await UI.confirm(`Czy chcesz ${action} użytkownikowi <strong>${UI.escapeHtml(name)}</strong>?`);
     if (!ok) return;
-    await API.toggleAdmin(id);
+    const res = await API.toggleAdmin(id);
+    if (res.error) {
+      alert(`Nie udało się zmienić uprawnień: ${res.error}`);
+      return;
+    }
     await this.load();
   },
 
   async deleteUser(id, name) {
     const ok = await UI.confirm(`Trwale usunąć konto <strong>${UI.escapeHtml(name)}</strong>? Tej operacji nie można cofnąć.`);
     if (!ok) return;
-    await API.deleteUser(id);
+    const res = await API.deleteUser(id);
+    if (res.error) {
+      alert(`Nie udało się usunąć konta: ${res.error}`);
+      return;
+    }
     await this.load();
   },
 
@@ -157,9 +173,14 @@ const Admin = {
       return;
     }
 
-    const res = await API.changePassword(currentPassword, newPassword);
+    let res;
+    try {
+      res = await API.changePassword(currentPassword, newPassword);
+    } catch (e) {
+      res = { error: e.message || 'Błąd połączenia' };
+    }
     if (res.error) {
-      if (notice) notice.innerHTML = UI.notice(res.error, 'error');
+      if (notice) notice.innerHTML = UI.notice(UI.escapeHtml(res.error), 'error');
       return;
     }
 
@@ -199,9 +220,14 @@ const Admin = {
       return;
     }
 
-    const res = await API.resetUserPassword(id, newPassword);
+    let res;
+    try {
+      res = await API.resetUserPassword(id, newPassword);
+    } catch (e) {
+      res = { error: e.message || 'Błąd połączenia' };
+    }
     if (res.error) {
-      if (notice) notice.innerHTML = UI.notice(res.error, 'error');
+      if (notice) notice.innerHTML = UI.notice(UI.escapeHtml(res.error), 'error');
       return;
     }
 

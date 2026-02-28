@@ -1,19 +1,33 @@
 // public/js/api.js — REST API helper
 const API = {
+  async parseResponse(r) {
+    const text = await r.text();
+    let data = {};
+    if (text) {
+      try {
+        data = JSON.parse(text);
+      } catch {
+        data = { error: text };
+      }
+    }
+    if (!r.ok && !data.error) data.error = `HTTP ${r.status}`;
+    return data;
+  },
+
   async post(url, body) {
     const r = await fetch(url, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body), credentials: 'include',
     });
-    return r.json();
+    return API.parseResponse(r);
   },
   async get(url) {
     const r = await fetch(url, { credentials: 'include' });
-    return r.json();
+    return API.parseResponse(r);
   },
   async delete(url) {
     const r = await fetch(url, { method: 'DELETE', credentials: 'include' });
-    return r.json();
+    return API.parseResponse(r);
   },
 
   register: (username, password) => API.post('/api/register', { username, password }),

@@ -13,12 +13,12 @@ const CONFIGS = {
 
 // Moce: indeks = liczba faszystowskich ustaw - 1
 const POWERS = {
-  5:  [null,          null,          'investigate',   null,              'specialElection', 'execute'],
-  6:  [null,          null,          'investigate',   null,              'specialElection', 'execute'],
-  7:  [null,          'investigate', 'investigate',   'specialElection', 'execute',         'execute'],
-  8:  [null,          'investigate', 'investigate',   'specialElection', 'execute',         'execute'],
-  9:  ['investigate', 'investigate', 'peekPolicies',  'specialElection', 'execute',         'execute'],
-  10: ['investigate', 'investigate', 'peekPolicies',  'specialElection', 'execute',         'execute'],
+  5:  [null,          null,          'peekPolicies',  'execute',         'execute',         null],
+  6:  [null,          null,          'peekPolicies',  'execute',         'execute',         null],
+  7:  [null,          'investigate', 'specialElection','execute',        'execute',         null],
+  8:  [null,          'investigate', 'specialElection','execute',        'execute',         null],
+  9:  ['investigate', 'investigate', 'specialElection','execute',        'execute',         null],
+  10: ['investigate', 'investigate', 'specialElection','execute',        'execute',         null],
 };
 
 function shuffle(arr) {

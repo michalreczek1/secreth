@@ -521,16 +521,19 @@ label { font-size: 12px; color: var(--text-dim); display: block; margin-bottom: 
   flex-direction: column;
   gap: 6px;
   min-height: 0;
+  overflow: hidden;
 }
 .vote-history-list {
   display: flex;
   flex-direction: column;
   gap: 10px;
+  height: min(34vh, 320px);
   max-height: min(34vh, 320px);
   overflow-y: auto;
   padding-right: 4px;
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
 }
 .vote-history-entry {
   border: 1px solid var(--border);
@@ -614,9 +617,11 @@ label { font-size: 12px; color: var(--text-dim); display: block; margin-bottom: 
   flex-direction: column;
   flex: 1;
   min-height: 0;
+  overflow: hidden;
 }
 .game-log {
   flex: 1;
+  height: min(52vh, 560px);
   min-height: 220px;
   max-height: min(52vh, 560px);
   overflow-y: auto;
@@ -625,6 +630,7 @@ label { font-size: 12px; color: var(--text-dim); display: block; margin-bottom: 
   border: 1px solid var(--border);
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
 }
 .log-entry {
   font-size: 14px;
@@ -860,7 +866,7 @@ label { font-size: 12px; color: var(--text-dim); display: block; margin-bottom: 
   .panel-left, .panel-chat { display: none; }
   .panel-left.mobile-show, .panel-chat.mobile-show { display: flex; }
   .mobile-chat-toggle { display: inline-flex; align-items: center; }
-  .panel-main { padding: 16px 14px 28px; }
+  .panel-main { padding: 16px 14px 28px; overflow-y: visible; }
   .game-layout { min-height: auto; }
   .game-columns { grid-template-columns: 1fr; }
   .action-panel { min-height: 0; }
@@ -869,8 +875,8 @@ label { font-size: 12px; color: var(--text-dim); display: block; margin-bottom: 
   .site-nav, .site-user { width: 100%; margin-left: 0; }
   .site-user { justify-content: space-between; }
   .vote-btn { font-size: 18px; }
-  .vote-history-list { max-height: min(26vh, 240px); }
-  .game-log { min-height: 0; max-height: min(34vh, 320px); }
+  .vote-history-list { height: min(26vh, 240px); max-height: min(26vh, 240px); }
+  .game-log { height: min(34vh, 320px); min-height: 0; max-height: min(34vh, 320px); }
   .vote-history-votes { grid-template-columns: 1fr; }
   .disconnect-actions { flex-direction: column; }
 }
@@ -911,6 +917,7 @@ label { font-size: 12px; color: var(--text-dim); display: block; margin-bottom: 
   .game-log-panel .section-title { font-size: 12px !important; }
   .vote-history-panel { gap: 8px; }
   .vote-history-list {
+    height: min(24vh, 220px);
     max-height: min(24vh, 220px);
     padding-right: 2px;
   }
@@ -931,6 +938,7 @@ label { font-size: 12px; color: var(--text-dim); display: block; margin-bottom: 
     width: 100%;
   }
   .game-log {
+    height: min(32vh, 280px);
     min-height: 0;
     max-height: min(32vh, 280px);
     padding: 12px;

@@ -143,9 +143,13 @@ const Chat = {
 
   renderMessageText(message) {
     const text = String(message || '');
-    const normalized = text
+    let normalized = text
       .replace(/🟦/g, '[CLAIM_CARD:L]')
       .replace(/🟥/g, '[CLAIM_CARD:F]');
+    normalized = normalized.replace(
+      /(:\s*|\bclaim\s+|\bdeklaruje(?:\s+jako\s+\w+)?:\s*)([lf]{2,3})(?=$|[\s.!?])/gi,
+      (_match, prefix, summary) => `${prefix}[CLAIM:${summary.toUpperCase()}]`
+    );
     const claimPattern = /\[CLAIM:([LF]{2,3})\]|\[CLAIM_CARD:([LF])\](?:\s*\[CLAIM_CARD:([LF])\])?(?:\s*\[CLAIM_CARD:([LF])\])?/g;
     let html = '';
     let lastIndex = 0;

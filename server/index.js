@@ -146,11 +146,10 @@ function clearRoomBotsMeta(roomId) {
   roomBots.delete(roomId);
 }
 
-function hasHumanInRoom(roomId) {
-  for (const su of socketUsers.values()) {
-    if (su.roomId === roomId && !isBotId(su.userId)) return true;
-  }
-  return false;
+function hasControllingHumanInGame(roomId) {
+  const state = activeGames.get(roomId)?.state;
+  if (!state?.players) return false;
+  return state.players.some((player) => !player.dead && !isBotId(player.id) && player.connected !== false && !state.botControlled?.[player.id]);
 }
 
 function getGameBotIds(roomId) {
@@ -182,7 +181,7 @@ function isDisconnectPauseActive(state) {
 function shouldBotsPlay(roomId) {
   const ag = activeGames.get(roomId);
   const bots = getAutomatedPlayerIds(roomId);
-  return bots.size > 0 && !!ag && ag.state.phase !== 'end' && !isDisconnectPauseActive(ag.state) && hasHumanInRoom(roomId);
+  return bots.size > 0 && !!ag && ag.state.phase !== 'end' && !isDisconnectPauseActive(ag.state) && hasControllingHumanInGame(roomId);
 }
 
 function pickBotName(existingNames) {
@@ -693,10 +692,10 @@ io.on('connection', async (socket) => {
     }
   });
 
-  socket.on('game:declareClaim', async ({ roomId, summary, skipped }, callback) => {
+  socket.on('game:declareClaim', async ({ roomId, sessionId, summary, skipped }, callback) => {
     try {
       if (!(await ensureSocketUserActive(callback))) return;
-      await submitLegislativeClaim(roomId, userId, summary, !!skipped);
+      await submitLegislativeClaim(roomId, userId, sessionId, summary, !!skipped);
       callback?.({ ok: true });
     } catch (e) {
       callback?.({ error: e.message });
@@ -869,14 +868,14 @@ function buildGameView(roomId, userId) {
   return view;
 }
 
-async function submitLegislativeClaim(roomId, userId, summary, skipped = false) {
+async function submitLegislativeClaim(roomId, userId, sessionId, summary, skipped = false) {
   const ag = activeGames.get(roomId);
   if (!ag?.state) throw new Error('Brak aktywnej gry');
 
   const player = ag.state.players.find((p) => p.id === userId);
   if (!player) throw new Error('Nie jesteś graczem tej partii');
 
-  const result = game.submitClaim(ag.state, userId, summary, skipped);
+  const result = game.submitClaim(ag.state, userId, sessionId, summary, skipped);
   ag.state = result.state;
   ensureGameMetaState(ag.state);
 
@@ -892,21 +891,23 @@ async function submitLegislativeClaim(roomId, userId, summary, skipped = false) 
 
 async function resolveReadyBotClaims(roomId) {
   const ag = activeGames.get(roomId);
-  if (!ag?.state?.claimSession || ag.state.phase === 'end') return;
+  if (!ag?.state || ag.state.phase === 'end') return;
 
   const automated = getAutomatedPlayerIds(roomId);
-  const session = ag.state.claimSession;
+  const sessions = Array.isArray(ag.state.claimSessions) ? ag.state.claimSessions : [];
   const pending = [];
 
-  if (session.presidentReady && !session.presidentSubmitted && automated.has(session.presidentId)) {
-    pending.push({ userId: session.presidentId, summary: session.presidentActual || 'LLF' });
-  }
-  if (session.chancellorReady && !session.chancellorSubmitted && automated.has(session.chancellorId)) {
-    pending.push({ userId: session.chancellorId, summary: session.chancellorActual || 'LF' });
+  for (const session of sessions) {
+    if (session.presidentReady && !session.presidentSubmitted && automated.has(session.presidentId)) {
+      pending.push({ sessionId: session.sessionId, userId: session.presidentId, summary: session.presidentActual || 'LLF' });
+    }
+    if (session.chancellorReady && !session.chancellorSubmitted && automated.has(session.chancellorId)) {
+      pending.push({ sessionId: session.sessionId, userId: session.chancellorId, summary: session.chancellorActual || 'LF' });
+    }
   }
 
   for (const item of pending) {
-    await submitLegislativeClaim(roomId, item.userId, item.summary, false);
+    await submitLegislativeClaim(roomId, item.userId, item.sessionId, item.summary, false);
   }
 }
 

@@ -1056,8 +1056,10 @@ const Game = {
 
   async declareClaim(summary, skipped = false) {
     if (!this.roomId) return;
+    const claim = this.state?.pendingClaim;
+    if (!claim?.sessionId) return;
     try {
-      await Socket.declareClaim(this.roomId, summary, skipped);
+      await Socket.declareClaim(this.roomId, claim.sessionId, summary, skipped);
       this.selectedClaimSummary = null;
       UI.closeModal();
     } catch (e) {

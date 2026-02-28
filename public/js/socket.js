@@ -111,9 +111,9 @@ const Socket = {
     }));
   },
 
-  declareClaim(roomId, summary, skipped = false) {
+  declareClaim(roomId, sessionId, summary, skipped = false) {
     return withSocketAck(() => new Promise((resolve, reject) => {
-      sock.emit('game:declareClaim', { roomId, summary, skipped }, (res) => {
+      sock.emit('game:declareClaim', { roomId, sessionId, summary, skipped }, (res) => {
         if (res?.error) reject(new Error(res.error));
         else resolve(res);
       });

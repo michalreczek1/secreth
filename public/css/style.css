@@ -459,6 +459,47 @@ label { font-size: 12px; color: var(--text-dim); display: block; margin-bottom: 
 }
 .log-entry:first-child { color: var(--cream); }
 
+.disconnect-panel {
+  border: 1px solid var(--gold-dim);
+  background: rgba(201,162,39,.08);
+  padding: 14px 16px;
+}
+.disconnect-panel-waiting {
+  border-color: #c8843c;
+  background: rgba(200,132,60,.08);
+}
+.disconnect-panel-vote {
+  border-color: var(--gold);
+  background: rgba(201,162,39,.12);
+}
+.disconnect-title {
+  font-family: 'Special Elite', monospace;
+  font-size: 14px;
+  letter-spacing: 2px;
+  color: var(--gold);
+  margin-bottom: 8px;
+}
+.disconnect-text {
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--cream);
+}
+.disconnect-muted {
+  color: var(--text-dim);
+}
+.disconnect-vote-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+.disconnect-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
 /* ── ADMIN PANEL ─────────────────────────────────────────────────────────── */
 .admin-table { width: 100%; border-collapse: collapse; font-size: 13px; }
 .admin-table th {
@@ -581,6 +622,7 @@ label { font-size: 12px; color: var(--text-dim); display: block; margin-bottom: 
   .site-user { justify-content: space-between; }
   .vote-btn { font-size: 18px; }
   .game-log { min-height: 38vh; }
+  .disconnect-actions { flex-direction: column; }
 }
 @media (max-width: 1200px) {
   .vote-row { gap: 10px; }
@@ -610,6 +652,7 @@ label { font-size: 12px; color: var(--text-dim); display: block; margin-bottom: 
   .game-log-panel .section-title { font-size: 12px !important; }
   .game-log { min-height: 44vh; padding: 12px; }
   .log-entry { font-size: 15px; }
+  .disconnect-text { font-size: 14px; }
   .event-modal-lead { font-size: 14px; }
   .event-highlight { font-size: 18px; padding: 12px 10px; }
   .event-vote-row { align-items: flex-start; }

@@ -111,6 +111,15 @@ const Socket = {
     }));
   },
 
+  disconnectDecision(roomId, choice) {
+    return withSocketAck(() => new Promise((resolve, reject) => {
+      sock.emit('game:disconnectDecision', { roomId, choice }, (res) => {
+        if (res?.error) reject(new Error(res.error));
+        else resolve(res);
+      });
+    }));
+  },
+
   restartGame(roomId) {
     return withSocketAck(() => new Promise((resolve, reject) => {
       sock.emit('game:restart', roomId, (res) => {

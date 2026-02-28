@@ -8,6 +8,7 @@ const Game = {
   investigateResult: null,
   revealedGameId: null,
   roleRevealTimer: null,
+  disconnectTicker: null,
   eventModalQueue: [],
   eventModalPending: false,
   lastEventFingerprint: null,
@@ -34,18 +35,21 @@ const Game = {
     // Preserve the pending state and render it once the view is mounted.
     if (this.state) {
       this.render();
+      this.updateDisconnectTicker();
       this.maybeRevealRole();
     }
   },
 
   reset() {
     if (this.roleRevealTimer) clearTimeout(this.roleRevealTimer);
+    if (this.disconnectTicker) clearInterval(this.disconnectTicker);
     this.state = null;
     this.roomId = null;
     this.myUserId = null;
     this.peekCards = null;
     this.investigateResult = null;
     this.roleRevealTimer = null;
+    this.disconnectTicker = null;
     this.eventModalQueue = [];
     this.eventModalPending = false;
     this.lastEventFingerprint = null;
@@ -56,6 +60,7 @@ const Game = {
     const prevState = this.state;
     this.state = state;
     this.render();
+    this.updateDisconnectTicker();
     this.handleStateEvents(prevState, state);
     this.maybeRevealRole();
   },
@@ -85,6 +90,7 @@ const Game = {
 
     main.innerHTML = `
       <div class="game-layout">
+        ${this.renderDisconnectControl(s)}
         ${this.renderBoards(s)}
         ${this.renderTracker(s)}
         <div class="game-columns">
@@ -96,6 +102,82 @@ const Game = {
     `;
 
     this.renderSidebarPlayers(s);
+  },
+
+  updateDisconnectTicker() {
+    const waiting = this.state?.disconnectControl?.phase === 'waiting';
+    if (!waiting) {
+      if (this.disconnectTicker) clearInterval(this.disconnectTicker);
+      this.disconnectTicker = null;
+      return;
+    }
+    if (this.disconnectTicker) return;
+    this.disconnectTicker = setInterval(() => {
+      if (!this.state?.disconnectControl || this.state.disconnectControl.phase !== 'waiting') {
+        clearInterval(this.disconnectTicker);
+        this.disconnectTicker = null;
+        return;
+      }
+      const countdown = document.getElementById('disconnect-countdown');
+      if (countdown) countdown.textContent = this.formatDisconnectCountdown(this.state.disconnectControl.expiresAt);
+    }, 1000);
+  },
+
+  formatDisconnectCountdown(expiresAt) {
+    if (!expiresAt) return '0s';
+    const remainingMs = Math.max(0, Number(expiresAt) - Date.now());
+    const totalSeconds = Math.ceil(remainingMs / 1000);
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+    return minutes > 0 ? `${minutes}:${String(seconds).padStart(2, '0')}` : `${seconds}s`;
+  },
+
+  renderDisconnectControl(s) {
+    const control = s.disconnectControl;
+    if (!control) return '';
+
+    if (control.phase === 'waiting') {
+      return `
+        <div class="disconnect-panel disconnect-panel-waiting">
+          <div class="disconnect-title">⏳ Gra Wstrzymana</div>
+          <div class="disconnect-text">
+            <strong>${UI.escapeHtml(control.targetUsername)}</strong> utracił łączność.
+            Czekamy na powrót jeszcze <span id="disconnect-countdown">${this.formatDisconnectCountdown(control.expiresAt)}</span>.
+          </div>
+        </div>
+      `;
+    }
+
+    const votes = control.votes || { wait: 0, takeover: 0, end: 0 };
+    const myVoteLabel = control.myVote
+      ? { wait: 'Czekamy', takeover: 'Bot przejmuje', end: 'Kończymy' }[control.myVote] || control.myVote
+      : null;
+
+    return `
+      <div class="disconnect-panel disconnect-panel-vote">
+        <div class="disconnect-title">🗳️ Decyzja Stołu</div>
+        <div class="disconnect-text">
+          <strong>${UI.escapeHtml(control.targetUsername)}</strong> nie wrócił na czas.
+          Pozostali żywi gracze decydują co dalej.
+        </div>
+        <div class="disconnect-vote-summary">
+          <span class="badge badge-vote-pending">Czekamy: ${votes.wait || 0}</span>
+          <span class="badge badge-vote-ja">Bot: ${votes.takeover || 0}</span>
+          <span class="badge badge-vote-nein">Koniec: ${votes.end || 0}</span>
+        </div>
+        ${control.canVote ? `
+          <div class="disconnect-actions">
+            <button class="btn btn-ghost btn-sm" onclick="Game.voteDisconnect('wait')">⌛ Czekamy</button>
+            <button class="btn btn-blue btn-sm" onclick="Game.voteDisconnect('takeover')">🤖 Bot przejmuje</button>
+            <button class="btn btn-red btn-sm" onclick="Game.voteDisconnect('end')">🛑 Kończymy</button>
+          </div>
+        ` : `
+          <div class="disconnect-text disconnect-muted">
+            ${myVoteLabel ? `Oddałeś głos: <strong>${UI.escapeHtml(myVoteLabel)}</strong>.` : `Czekamy na głosy (${control.eligibleCount || 0} uprawnionych).`}
+          </div>
+        `}
+      </div>
+    `;
   },
 
   maybeRevealRole() {
@@ -433,6 +515,7 @@ const Game = {
     const rows = s.players.map((p, i) => {
       const isMe = this.sameId(p.id, this.myUserId);
       const isBot = typeof p.id === 'string' && p.id.startsWith('bot:');
+      const isBotControlled = !!p.botControlled;
       const isPres = i === s.presidentIdx;
       const isChan = i === s.chancellorIdx;
       const voteBadge = this.renderVoteBadge(s, p);
@@ -444,7 +527,7 @@ const Game = {
       return `
         <div class="player-item ${isPres ? 'is-president' : ''} ${isChan ? 'is-chancellor' : ''} ${p.dead ? 'is-dead' : ''} ${isMe ? 'is-me' : ''}">
           <div class="player-dot ${p.dead ? 'dead' : p.connected !== false ? 'online' : ''}"></div>
-          <span class="player-name">${UI.escapeHtml(p.username)}${isMe ? ' (ty)' : ''}${isBot ? ' [BOT]' : ''}</span>
+          <span class="player-name">${UI.escapeHtml(p.username)}${isMe ? ' (ty)' : ''}${isBot ? ' [BOT]' : isBotControlled ? ' [AUTO]' : ''}</span>
           ${voteBadge}
           ${roleStr}
           ${isPres ? '<span class="badge badge-pres">Prez.</span>' : ''}
@@ -467,13 +550,14 @@ const Game = {
     el.innerHTML = s.players.map((p, i) => {
       const isMe = this.sameId(p.id, this.myUserId);
       const isBot = typeof p.id === 'string' && p.id.startsWith('bot:');
+      const isBotControlled = !!p.botControlled;
       const isPres = i === s.presidentIdx;
       const isChan = i === s.chancellorIdx;
       const voteBadge = this.renderVoteBadge(s, p);
       return `
         <div class="player-item ${isPres ? 'is-president' : ''} ${isChan ? 'is-chancellor' : ''} ${p.dead ? 'is-dead' : ''} ${isMe ? 'is-me' : ''}">
           <div class="player-dot ${p.dead ? 'dead' : p.connected !== false ? 'online' : ''}"></div>
-          <span class="player-name">${UI.escapeHtml(p.username)}${isMe ? ' (ty)' : ''}${isBot ? ' [BOT]' : ''}</span>
+          <span class="player-name">${UI.escapeHtml(p.username)}${isMe ? ' (ty)' : ''}${isBot ? ' [BOT]' : isBotControlled ? ' [AUTO]' : ''}</span>
           ${voteBadge}
           ${isPres ? '<span class="badge badge-pres">P</span>' : ''}
           ${isChan ? '<span class="badge badge-chan">K</span>' : ''}
@@ -829,6 +913,15 @@ const Game = {
     if (ok) {
       try { await Socket.restartGame(this.roomId); }
       catch (e) { alert(e.message); }
+    }
+  },
+
+  async voteDisconnect(choice) {
+    if (!this.roomId) return;
+    try {
+      await Socket.disconnectDecision(this.roomId, choice);
+    } catch (e) {
+      alert(e.message);
     }
   },
 };

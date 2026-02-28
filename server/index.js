@@ -50,6 +50,12 @@ const socketUsers  = new Map();
 const roomBots     = new Map();
 // roomId → timeout
 const roomBotTimers = new Map();
+// roomId → timeout
+const roomDisconnectTimers = new Map();
+
+const DISCONNECT_GRACE_MS = 90 * 1000;
+const DISCONNECT_WAIT_EXTENSION_MS = 60 * 1000;
+const DISCONNECT_CHOICES = new Set(['wait', 'takeover', 'end']);
 
 const BOT_NAMES = [
   'Otto', 'Greta', 'Erika', 'Walter', 'Bruno',
@@ -128,8 +134,15 @@ function clearBotTimer(roomId) {
   roomBotTimers.delete(roomId);
 }
 
+function clearDisconnectTimer(roomId) {
+  const timer = roomDisconnectTimers.get(roomId);
+  if (timer) clearTimeout(timer);
+  roomDisconnectTimers.delete(roomId);
+}
+
 function clearRoomBotsMeta(roomId) {
   clearBotTimer(roomId);
+  clearDisconnectTimer(roomId);
   roomBots.delete(roomId);
 }
 
@@ -146,10 +159,30 @@ function getGameBotIds(roomId) {
   return new Set(ag.state.players.filter(p => isBotId(p.id)).map(p => p.id));
 }
 
+function ensureGameMetaState(state) {
+  if (!state.botControlled || typeof state.botControlled !== 'object') state.botControlled = {};
+  if (!Object.prototype.hasOwnProperty.call(state, 'disconnectControl')) state.disconnectControl = null;
+  return state;
+}
+
+function getAutomatedPlayerIds(roomId) {
+  const ids = getGameBotIds(roomId);
+  const state = activeGames.get(roomId)?.state;
+  const botControlled = state?.botControlled || {};
+  for (const [userId, controlled] of Object.entries(botControlled)) {
+    if (controlled) ids.add(userId);
+  }
+  return ids;
+}
+
+function isDisconnectPauseActive(state) {
+  return !!state?.disconnectControl && (state.disconnectControl.phase === 'waiting' || state.disconnectControl.phase === 'decision');
+}
+
 function shouldBotsPlay(roomId) {
   const ag = activeGames.get(roomId);
-  const bots = getGameBotIds(roomId);
-  return bots.size > 0 && !!ag && ag.state.phase !== 'end' && hasHumanInRoom(roomId);
+  const bots = getAutomatedPlayerIds(roomId);
+  return bots.size > 0 && !!ag && ag.state.phase !== 'end' && !isDisconnectPauseActive(ag.state) && hasHumanInRoom(roomId);
 }
 
 function pickBotName(existingNames) {
@@ -525,12 +558,34 @@ io.on('connection', async (socket) => {
       // Reconnect do aktywnej gry
       const ag = activeGames.get(roomId);
       if (ag) {
+        ensureGameMetaState(ag.state);
         const p = ag.state.players.find(p => p.id === userId);
         if (p) {
+          const hadBotControl = !!ag.state.botControlled?.[userId];
+          const wasTarget = ag.state.disconnectControl?.targetUserId === userId;
           p.connected = true;
+          if (hadBotControl) delete ag.state.botControlled[userId];
+          if (wasTarget) {
+            ag.state.disconnectControl = null;
+            clearDisconnectTimer(roomId);
+          }
+          if (hadBotControl || wasTarget) {
+            ag.state = game.addLog(ag.state,
+              hadBotControl
+                ? `🔌 ${username} wrócił i odzyskuje kontrolę nad swoją rolą.`
+                : `🔌 ${username} wrócił do gry.`);
+            await persistActiveGameState(roomId);
+            await emitSystemRoomMessage(roomId,
+              hadBotControl
+                ? `🔌 ${username} wrócił i odzyskuje kontrolę nad swoją rolą.`
+                : `🔌 ${username} wrócił do gry.`);
+          } else {
+            await persistActiveGameState(roomId);
+          }
           if (!ag.playerSockets) ag.playerSockets = {};
           ag.playerSockets[userId] = socket.id;
-          socket.emit('game:state', game.getPlayerView(ag.state, userId));
+          broadcastGameState(roomId);
+          await ensureDisconnectWorkflow(roomId);
         }
       }
 
@@ -596,7 +651,7 @@ io.on('connection', async (socket) => {
       if (players.length > 10) return callback?.({ error: 'Za dużo graczy (max 10)' });
 
       const playerList = players.map(p => ({ id: p.userId, username: p.username }));
-      const state = game.createGame(playerList);
+      const state = ensureGameMetaState(game.createGame(playerList));
 
       const ag = { state, playerSockets: {} };
       for (const [sid, su] of socketUsers.entries()) {
@@ -638,6 +693,16 @@ io.on('connection', async (socket) => {
     }
   });
 
+  socket.on('game:disconnectDecision', async ({ roomId, choice }, callback) => {
+    try {
+      if (!(await ensureSocketUserActive(callback))) return;
+      await castDisconnectVote(roomId, userId, choice);
+      callback?.({ ok: true });
+    } catch (e) {
+      callback?.({ error: e.message });
+    }
+  });
+
   socket.on('game:restart', async (roomId, callback) => {
     try {
       if (!(await ensureSocketUserActive(callback))) return;
@@ -646,6 +711,7 @@ io.on('connection', async (socket) => {
       if (room.ownerId !== userId) return callback?.({ error: 'Tylko właściciel może zrestartować' });
       activeGames.delete(roomId);
       clearBotTimer(roomId);
+      clearDisconnectTimer(roomId);
       await db.rooms.setState(roomId, 'lobby', null);
       io.to(`room:${roomId}`).emit('game:reset');
       io.emit('rooms:updated');
@@ -667,8 +733,15 @@ io.on('connection', async (socket) => {
 
       const ag = activeGames.get(su.roomId);
       if (ag) {
+        ensureGameMetaState(ag.state);
         const p = ag.state.players.find(p => p.id === su.userId);
-        if (p) { p.connected = false; broadcastGameState(su.roomId); }
+        if (p) {
+          p.connected = false;
+          if (ag.playerSockets) delete ag.playerSockets[su.userId];
+          await persistActiveGameState(su.roomId);
+          broadcastGameState(su.roomId);
+          await ensureDisconnectWorkflow(su.roomId);
+        }
       }
     }
     socketUsers.delete(socket.id);
@@ -694,12 +767,233 @@ function getDeadPlayerInActiveGame(userId, roomId = null) {
   return null;
 }
 
+async function emitSystemRoomMessage(roomId, message) {
+  const createdAt = new Date().toISOString();
+  await db.messages.insert(roomId, null, 'System', message, 'system');
+  io.to(`room:${roomId}`).emit('chat:message', {
+    username: 'System',
+    message,
+    createdAt,
+    type: 'system',
+    roomId,
+  });
+}
+
+async function persistActiveGameState(roomId) {
+  const ag = activeGames.get(roomId);
+  if (!ag?.state) return;
+  await db.rooms.setState(roomId, ag.state.phase === 'end' ? 'lobby' : 'playing',
+    ag.state.phase === 'end' ? null : JSON.stringify(ag.state));
+}
+
+function getDisconnectedHumanCandidate(state) {
+  ensureGameMetaState(state);
+  return state.players.find((p) =>
+    !p.dead &&
+    !isBotId(p.id) &&
+    p.connected === false &&
+    !state.botControlled[p.id]
+  ) || null;
+}
+
+function getDisconnectEligibleVoters(state, targetUserId) {
+  return state.players
+    .filter((p) => !p.dead && p.id !== targetUserId && !isBotId(p.id) && p.connected !== false)
+    .map((p) => p.id);
+}
+
+function summarizeDisconnectVotes(control) {
+  const summary = { wait: 0, takeover: 0, end: 0 };
+  for (const choice of Object.values(control?.votes || {})) {
+    if (summary[choice] !== undefined) summary[choice] += 1;
+  }
+  return summary;
+}
+
+function buildDisconnectView(state, userId) {
+  const control = state.disconnectControl;
+  if (!control) return null;
+  const votes = summarizeDisconnectVotes(control);
+  return {
+    phase: control.phase,
+    targetUserId: control.targetUserId,
+    targetUsername: control.targetUsername,
+    expiresAt: control.expiresAt || null,
+    myVote: control.votes?.[userId] || null,
+    canVote: control.phase === 'decision' && control.eligibleVoterIds?.includes(userId),
+    eligibleCount: control.eligibleVoterIds?.length || 0,
+    votes,
+  };
+}
+
+function buildGameView(roomId, userId) {
+  const ag = activeGames.get(roomId);
+  if (!ag?.state) return null;
+  const state = ensureGameMetaState(ag.state);
+  const view = game.getPlayerView(state, userId);
+  view.players = view.players.map((p) => ({
+    ...p,
+    botControlled: !!state.botControlled?.[p.id],
+  }));
+  view.disconnectControl = buildDisconnectView(state, userId);
+  return view;
+}
+
+async function beginDisconnectWait(roomId, targetUserId, durationMs, logMessage = null) {
+  const ag = activeGames.get(roomId);
+  if (!ag?.state) return;
+  const state = ensureGameMetaState(ag.state);
+  const player = state.players.find(p => p.id === targetUserId);
+  if (!player || player.dead || player.connected !== false || state.botControlled[targetUserId]) return;
+
+  clearDisconnectTimer(roomId);
+  state.disconnectControl = {
+    phase: 'waiting',
+    targetUserId,
+    targetUsername: player.username,
+    expiresAt: Date.now() + durationMs,
+    votes: {},
+    eligibleVoterIds: [],
+  };
+  if (logMessage) ag.state = game.addLog(state, logMessage);
+  await persistActiveGameState(roomId);
+  broadcastGameState(roomId);
+  roomDisconnectTimers.set(roomId, setTimeout(() => {
+    openDisconnectDecision(roomId, targetUserId).catch((e) => console.error('disconnect decision error', e));
+  }, durationMs));
+}
+
+async function ensureDisconnectWorkflow(roomId) {
+  const ag = activeGames.get(roomId);
+  if (!ag?.state || ag.state.phase === 'end') return;
+  ensureGameMetaState(ag.state);
+  if (ag.state.disconnectControl) return;
+  const target = getDisconnectedHumanCandidate(ag.state);
+  if (!target) return;
+  await beginDisconnectWait(roomId, target.id, DISCONNECT_GRACE_MS,
+    `⏳ ${target.username} utracił łączność. Gra wstrzymana na 90 sekund.`);
+  await emitSystemRoomMessage(roomId, `⏳ ${target.username} utracił łączność. Czekamy 90 sekund na powrót.`);
+}
+
+async function resolveDisconnectChoice(roomId, choice, context = {}) {
+  const ag = activeGames.get(roomId);
+  if (!ag?.state) return;
+  const state = ensureGameMetaState(ag.state);
+  const control = state.disconnectControl;
+  const targetUserId = context.targetUserId || control?.targetUserId;
+  const targetUsername = context.targetUsername || control?.targetUsername || 'Gracz';
+
+  clearDisconnectTimer(roomId);
+
+  if (choice === 'wait') {
+    state.disconnectControl = null;
+    await beginDisconnectWait(roomId, targetUserId, DISCONNECT_WAIT_EXTENSION_MS,
+      `⌛ Gracze postanowili jeszcze poczekać na ${targetUsername}.`);
+    await emitSystemRoomMessage(roomId, `⌛ Gracze postanowili jeszcze 60 sekund poczekać na ${targetUsername}.`);
+    return;
+  }
+
+  if (choice === 'takeover') {
+    state.botControlled[targetUserId] = true;
+    state.disconnectControl = null;
+    ag.state = game.addLog(state, `🤖 Bot przejmuje turę gracza ${targetUsername}.`);
+    await persistActiveGameState(roomId);
+    broadcastGameState(roomId);
+    await emitSystemRoomMessage(roomId, `🤖 Bot przejmuje kontrolę nad graczem ${targetUsername}.`);
+    if (shouldBotsPlay(roomId)) scheduleBots(roomId, 700);
+    return;
+  }
+
+  if (choice === 'end') {
+    state.disconnectControl = null;
+    await emitSystemRoomMessage(roomId, `🛑 Gra została zakończona z powodu braku powrotu gracza ${targetUsername}.`);
+    activeGames.delete(roomId);
+    clearBotTimer(roomId);
+    clearDisconnectTimer(roomId);
+    await db.rooms.setState(roomId, 'lobby', null);
+    io.to(`room:${roomId}`).emit('game:reset');
+    io.emit('rooms:updated');
+  }
+}
+
+async function maybeResolveDisconnectVote(roomId) {
+  const ag = activeGames.get(roomId);
+  if (!ag?.state?.disconnectControl || ag.state.disconnectControl.phase !== 'decision') return;
+  const control = ag.state.disconnectControl;
+  const summary = summarizeDisconnectVotes(control);
+  const majority = Math.floor((control.eligibleVoterIds?.length || 0) / 2) + 1;
+  for (const choice of ['takeover', 'end', 'wait']) {
+    if (summary[choice] >= majority) {
+      await resolveDisconnectChoice(roomId, choice);
+      return;
+    }
+  }
+
+  const voteCount = Object.keys(control.votes || {}).length;
+  const eligibleCount = control.eligibleVoterIds?.length || 0;
+  if (voteCount < eligibleCount) return;
+
+  const ranked = Object.entries(summary).sort((a, b) => b[1] - a[1]);
+  const [bestChoice, bestCount] = ranked[0];
+  const secondCount = ranked[1]?.[1] || 0;
+  await resolveDisconnectChoice(roomId, bestCount > secondCount ? bestChoice : 'wait');
+}
+
+async function openDisconnectDecision(roomId, targetUserId) {
+  const ag = activeGames.get(roomId);
+  if (!ag?.state) return;
+  const state = ensureGameMetaState(ag.state);
+  const player = state.players.find(p => p.id === targetUserId);
+  if (!player || player.dead || player.connected !== false || state.botControlled[targetUserId]) {
+    state.disconnectControl = null;
+    await persistActiveGameState(roomId);
+    broadcastGameState(roomId);
+    return;
+  }
+
+  const eligibleVoterIds = getDisconnectEligibleVoters(state, targetUserId);
+  if (!eligibleVoterIds.length) {
+    await resolveDisconnectChoice(roomId, 'end', { targetUserId, targetUsername: player.username });
+    return;
+  }
+
+  state.disconnectControl = {
+    phase: 'decision',
+    targetUserId,
+    targetUsername: player.username,
+    expiresAt: null,
+    votes: {},
+    eligibleVoterIds,
+  };
+  ag.state = game.addLog(state, `🗳️ ${player.username} nie wrócił na czas. Pozostali gracze decydują co dalej.`);
+  await persistActiveGameState(roomId);
+  broadcastGameState(roomId);
+  await emitSystemRoomMessage(roomId, `🗳️ ${player.username} nie wrócił na czas. Pozostali żywi gracze głosują: czekać, bot albo zakończyć grę.`);
+}
+
+async function castDisconnectVote(roomId, userId, choice) {
+  if (!DISCONNECT_CHOICES.has(choice)) throw new Error('Nieprawidłowa decyzja');
+  const ag = activeGames.get(roomId);
+  if (!ag?.state) throw new Error('Brak aktywnej gry');
+  const state = ensureGameMetaState(ag.state);
+  const control = state.disconnectControl;
+  if (!control || control.phase !== 'decision') throw new Error('Brak aktywnej decyzji o rozłączeniu');
+  if (!control.eligibleVoterIds.includes(userId)) throw new Error('Nie możesz głosować w tej decyzji');
+  if (control.votes?.[userId]) throw new Error('Już zagłosowałeś');
+
+  control.votes = { ...(control.votes || {}), [userId]: choice };
+  state.disconnectControl = control;
+  await persistActiveGameState(roomId);
+  broadcastGameState(roomId);
+  await maybeResolveDisconnectVote(roomId);
+}
+
 function broadcastGameState(roomId) {
   const ag = activeGames.get(roomId);
   if (!ag) return;
   for (const player of ag.state.players) {
     const sid = ag.playerSockets[player.id];
-    if (sid) io.to(sid).emit('game:state', game.getPlayerView(ag.state, player.id));
+    if (sid) io.to(sid).emit('game:state', buildGameView(roomId, player.id));
   }
   if (shouldBotsPlay(roomId)) scheduleBots(roomId, 500);
 }
@@ -771,7 +1065,9 @@ function chooseBotExecutiveTarget(state, mode) {
 async function processGameAction(roomId, userId, action, payload = {}) {
   const ag = activeGames.get(roomId);
   if (!ag) throw new Error('Brak aktywnej gry');
+  ensureGameMetaState(ag.state);
   if (ag.state.phase === 'end') throw new Error('Gra się skończyła');
+  if (isDisconnectPauseActive(ag.state)) throw new Error('Gra jest wstrzymana z powodu rozłączenia gracza');
 
   let newState;
   let extra = {};
@@ -800,6 +1096,7 @@ async function processGameAction(roomId, userId, action, payload = {}) {
   }
 
   ag.state = newState;
+  ensureGameMetaState(ag.state);
   const isFinished = newState.phase === 'end';
   const newRoomState = isFinished ? 'lobby' : 'playing';
   await db.rooms.setState(roomId, newRoomState, isFinished ? null : JSON.stringify(newState));
@@ -849,7 +1146,8 @@ async function runBotTurn(roomId) {
 
   let state = activeGames.get(roomId)?.state;
   if (!state) return;
-  const botIds = new Set(state.players.filter(p => isBotId(p.id)).map(p => p.id));
+  ensureGameMetaState(state);
+  const botIds = getAutomatedPlayerIds(roomId);
 
   switch (state.phase) {
     case 'nominate': {
@@ -957,6 +1255,8 @@ async function restoreActiveGames() {
     try {
       const state = JSON.parse(room.gameData);
       if (!state || !Array.isArray(state.players)) throw new Error('Invalid state');
+      ensureGameMetaState(state);
+      state.disconnectControl = null;
       state.players = state.players.map(p => ({ ...p, connected: false }));
       for (const player of state.players) {
         if (isBotId(player.id)) registerBot(room._id, player.id);

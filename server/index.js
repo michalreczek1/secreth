@@ -588,14 +588,17 @@ io.on('connection', async (socket) => {
         }
       }
 
-      await emitRoomPlayers(roomId);
+      const updatedPlayers = await emitRoomPlayers(roomId);
       if (shouldBotsPlay(roomId)) scheduleBots(roomId, 700);
 
       // Historia czatu pokoju
       const history = await db.messages.getRoom(roomId);
       socket.emit('chat:history', history);
 
-      callback?.({ ok: true });
+      callback?.({
+        ok: true,
+        players: updatedPlayers.map((p) => ({ id: p.userId, username: p.username })),
+      });
     } catch (e) {
       console.error('room:join error', e);
       callback?.({ error: 'Błąd serwera' });

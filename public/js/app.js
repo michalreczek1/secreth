@@ -137,7 +137,11 @@ const App = {
     const el = document.getElementById('conn-status');
     if (el) { el.textContent = '🟢 Online'; el.style.color = '#4a8'; }
     if (this.currentRoomId) {
-      Socket.joinRoom(this.currentRoomId).catch(() => {});
+      Socket.joinRoom(this.currentRoomId)
+        .then((res) => {
+          if (Array.isArray(res?.players)) this.onRoomPlayers(res.players);
+        })
+        .catch(() => {});
     }
   },
   onSocketDisconnect() {
@@ -456,7 +460,8 @@ const App = {
     }
     if (!skipSocket) {
       try {
-        await Socket.joinRoom(roomId);
+        const res = await Socket.joinRoom(roomId);
+        if (Array.isArray(res?.players)) this.roomPlayers = res.players;
       } catch (e) {
         alert(e.message);
         return;
@@ -513,7 +518,7 @@ const App = {
 
     // Lobby view
     const isOwner = room.ownerId === this.currentUser.id;
-    const players = await this.getRoomPlayers(roomId);
+    const players = await this.getRoomPlayers(roomId, room.playerCount);
     const botCount = players.filter(p => typeof p.id === 'string' && p.id.startsWith('bot:')).length;
     const canStart = isOwner && players.length >= 5 && players.length <= 10;
     const canManageBots = room.state === 'lobby' && (isOwner || this.currentUser?.isAdmin);
@@ -575,9 +580,10 @@ const App = {
     this.renderRoomPlayers(players);
   },
 
-  async getRoomPlayers(roomId) {
+  async getRoomPlayers(roomId, fallbackCount = 0) {
     if (roomId !== this.currentRoomId) return [];
-    return this.roomPlayers;
+    if (Array.isArray(this.roomPlayers) && this.roomPlayers.length > 0) return this.roomPlayers;
+    return Array.from({ length: fallbackCount }, (_, i) => ({ id: `placeholder:${i}`, username: 'Ładowanie...' }));
   },
 
   renderRoomPlayers(players) {
@@ -588,11 +594,12 @@ const App = {
     if (countEl) countEl.textContent = players.length;
 
     const rows = players.map(p => {
+      const isPlaceholder = typeof p.id === 'string' && p.id.startsWith('placeholder:');
       const isMe = p.id === this.currentUser.id;
       const isBot = typeof p.id === 'string' && p.id.startsWith('bot:');
       return `<div class="player-item ${isMe ? 'is-me' : ''}">
-        <div class="player-dot online"></div>
-        <span class="player-name">${UI.escapeHtml(p.username)}${isMe ? ' (ty)' : ''}${isBot ? ' [BOT]' : ''}</span>
+        <div class="player-dot ${isPlaceholder ? '' : 'online'}"></div>
+        <span class="player-name">${UI.escapeHtml(p.username)}${isPlaceholder ? '' : isMe ? ' (ty)' : ''}${isBot ? ' [BOT]' : ''}</span>
       </div>`;
     }).join('');
 
@@ -601,7 +608,7 @@ const App = {
 
     // Update start button
     const startBtn = document.querySelector('[onclick="App.startGame()"]');
-    if (startBtn) startBtn.disabled = players.length < 5;
+    if (startBtn) startBtn.disabled = players.filter(p => !(typeof p.id === 'string' && p.id.startsWith('placeholder:'))).length < 5;
   },
 
   async startGame() {

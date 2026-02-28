@@ -132,6 +132,36 @@ const Chat = {
     el.scrollTop = el.scrollHeight;
   },
 
+  renderClaimSummary(summary) {
+    return String(summary || '')
+      .split('')
+      .map((card) => `
+        <span class="chat-claim-card ${card === 'L' ? 'chat-claim-card-l' : 'chat-claim-card-f'}">${card}</span>
+      `)
+      .join('');
+  },
+
+  renderMessageText(message) {
+    const text = String(message || '');
+    const normalized = text
+      .replace(/🟦/g, '[CLAIM_CARD:L]')
+      .replace(/🟥/g, '[CLAIM_CARD:F]');
+    const claimPattern = /\[CLAIM:([LF]{2,3})\]|\[CLAIM_CARD:([LF])\](?:\s*\[CLAIM_CARD:([LF])\])?(?:\s*\[CLAIM_CARD:([LF])\])?/g;
+    let html = '';
+    let lastIndex = 0;
+    let match;
+
+    while ((match = claimPattern.exec(normalized)) !== null) {
+      html += UI.escapeHtml(normalized.slice(lastIndex, match.index));
+      const summary = match[1] || [match[2], match[3], match[4]].filter(Boolean).join('');
+      html += `<span class="chat-claim-cards">${this.renderClaimSummary(summary)}</span>`;
+      lastIndex = match.index + match[0].length;
+    }
+
+    html += UI.escapeHtml(normalized.slice(lastIndex));
+    return html;
+  },
+
   appendMessage(msg, scroll = true) {
     const el = this.getMessagesEl();
     if (!el) return;
@@ -140,7 +170,7 @@ const Chat = {
     const isSystem = msg.type === 'system';
     const userClass = isSystem ? 'system' : '';
     const username = UI.escapeHtml(msg.username || 'System');
-    const message = UI.escapeHtml(msg.message || '');
+    const message = this.renderMessageText(msg.message || '');
 
     const div = document.createElement('div');
     div.className = 'chat-msg';

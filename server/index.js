@@ -839,10 +839,8 @@ async function emitPlayerRoomMessage(roomId, userId, username, message) {
 
 function formatClaimSummary(summary) {
   if (!summary) return '';
-  return String(summary)
-    .split('')
-    .map((card) => card === 'L' ? '🟦' : card === 'F' ? '🟥' : card)
-    .join(' ');
+  const normalized = String(summary).replace(/[^LF]/g, '');
+  return normalized ? `[CLAIM:${normalized}]` : '';
 }
 
 async function persistActiveGameState(roomId) {

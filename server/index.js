@@ -556,6 +556,17 @@ io.on('connection', async (socket) => {
     const msg = (message || '').trim().substring(0, 500);
     if (!msg) return;
     const rid = targetRoom || null;
+    if (getDeadPlayerInActiveGame(userId, rid)) {
+      socket.emit('chat:message', {
+        username: 'System',
+        message: 'Zostałeś wyeliminowany z gry i nie możesz już pisać.',
+        createdAt: new Date().toISOString(),
+        type: 'system',
+        global: !rid,
+        roomId: rid,
+      });
+      return;
+    }
     const createdAt = new Date().toISOString();
     await db.messages.insert(rid, userId, username, msg, 'chat');
     const payload = { username, message: msg, createdAt, type: 'chat', global: !rid, roomId: rid };
@@ -673,6 +684,16 @@ async function emitRoomPlayers(roomId) {
   return players;
 }
 
+function getDeadPlayerInActiveGame(userId, roomId = null) {
+  const games = roomId ? [[roomId, activeGames.get(roomId)]] : [...activeGames.entries()];
+  for (const [, ag] of games) {
+    if (!ag?.state?.players) continue;
+    const player = ag.state.players.find(p => p.id === userId);
+    if (player?.dead) return player;
+  }
+  return null;
+}
+
 function broadcastGameState(roomId) {
   const ag = activeGames.get(roomId);
   if (!ag) return;
@@ -767,7 +788,7 @@ async function processGameAction(roomId, userId, action, payload = {}) {
       newState = r.s; extra.peek = r.peek;
       break;
     }
-    case 'finishPeek':      newState = game.finishPeekAction(ag.state); break;
+    case 'finishPeek':      newState = game.finishPeekAction(ag.state, userId); break;
     case 'investigate': {
       const r = game.executeInvestigate(ag.state, userId, payload.targetIdx);
       newState = r.s; extra.party = r.party; extra.targetUsername = r.targetUsername;

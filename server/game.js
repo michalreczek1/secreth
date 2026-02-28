@@ -44,6 +44,16 @@ function drawCards(deck, discard, count) {
   return { drawn, deck: d, discard: dis };
 }
 
+function ensureDeckHasCards(deck, discard, count) {
+  let d = [...deck];
+  let dis = [...discard];
+  if (d.length < count) {
+    d = shuffle([...d, ...dis]);
+    dis = [];
+  }
+  return { deck: d, discard: dis };
+}
+
 function nextAlive(players, from) {
   let idx = (from + 1) % players.length;
   for (let i = 0; i < players.length; i++) {
@@ -301,11 +311,9 @@ function executePeek(state, userId) {
   if (state.phase !== 'executive' || state.execPower !== 'peekPolicies') throw new Error('Zła faza/moc');
   const presPlayer = state.players[state.presidentIdx];
   if (presPlayer.id !== userId) throw new Error('Nie jesteś Prezydentem');
-  // Zwracamy top 3 karty (widoczne tylko dla Prezydenta) — nie zmieniamy talii
-  const top3 = state.deck.slice(0, 3).length < 3
-    ? shuffle([...state.deck, ...state.discard]).slice(0, 3)
-    : state.deck.slice(0, 3);
-  let s = addLog({ ...state, phase: 'executiveDone', execPower: null },
+  const { deck, discard } = ensureDeckHasCards(state.deck, state.discard, 3);
+  const top3 = deck.slice(0, 3);
+  let s = addLog({ ...state, deck, discard, phase: 'executiveDone', execPower: null },
     `👁️ ${presPlayer.username} podgląda 3 kolejne ustawy`);
   return { s, peek: top3 };
 }
@@ -370,8 +378,10 @@ function executeKill(state, userId, targetIdx) {
 }
 
 // Po peek — przesuń kadencję
-function finishPeekAction(state) {
-  if (state.phase !== 'executiveDone') return state;
+function finishPeekAction(state, userId) {
+  if (state.phase !== 'executiveDone') throw new Error('Zła faza gry');
+  const presPlayer = state.players[state.presidentIdx];
+  if (!presPlayer || presPlayer.id !== userId) throw new Error('Nie jesteś Prezydentem');
   return advance(state, state.spOrigin != null, { recordGovernment: true });
 }
 

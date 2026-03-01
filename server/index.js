@@ -64,6 +64,7 @@ const roomDisconnectTimers = new Map();
 const DISCONNECT_GRACE_MS = 90 * 1000;
 const DISCONNECT_WAIT_EXTENSION_MS = 60 * 1000;
 const DISCONNECT_CHOICES = new Set(['wait', 'takeover', 'end']);
+const SYSTEM_USER_ID = '__system__';
 
 const BOT_NAMES = [
   'Otto', 'Greta', 'Erika', 'Walter', 'Bruno',
@@ -724,7 +725,7 @@ io.on('connection', async (socket) => {
       broadcastGameState(roomId);
       io.emit('rooms:updated');
 
-      await db.messages.insert(roomId, userId, 'System',
+      await db.messages.insert(roomId, SYSTEM_USER_ID, 'System',
         `🎮 Gra rozpoczęta! Grają: ${playerList.map(p => p.username).join(', ')}`, 'system');
       io.to(`room:${roomId}`).emit('chat:message', {
         username: 'System',
@@ -859,7 +860,7 @@ function getDeadPlayerInActiveGame(userId, roomId = null) {
 
 async function emitSystemRoomMessage(roomId, message) {
   const createdAt = new Date().toISOString();
-  await db.messages.insert(roomId, null, 'System', message, 'system');
+  await db.messages.insert(roomId, SYSTEM_USER_ID, 'System', message, 'system');
   io.to(`room:${roomId}`).emit('chat:message', {
     username: 'System',
     message,
@@ -1408,7 +1409,7 @@ async function processGameAction(roomId, userId, action, payload = {}) {
 
   if (newState.winner) {
     io.emit('rooms:updated');
-    await db.messages.insert(roomId, userId, 'System',
+    await db.messages.insert(roomId, SYSTEM_USER_ID, 'System',
       `🏁 Koniec gry: ${newState.winner === 'Liberal' ? 'Liberałowie wygrywają!' : 'Faszyści wygrywają!'} (${newState.winReason})`,
       'system');
     io.to(`room:${roomId}`).emit('chat:message', {

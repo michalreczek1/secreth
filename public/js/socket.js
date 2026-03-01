@@ -34,7 +34,12 @@ function waitForConnect() {
 function ensureSocket() {
   if (sock) return;
 
-  sock = io({ withCredentials: true, autoConnect: false });
+  sock = io({
+    withCredentials: true,
+    autoConnect: false,
+    transports: ['websocket'],
+    timeout: 8000,
+  });
 
   sock.on('connect', () => {
     console.log('🔌 Socket connected:', sock.id);
@@ -43,6 +48,9 @@ function ensureSocket() {
   sock.on('disconnect', () => {
     console.log('❌ Socket disconnected');
     App.onSocketDisconnect?.();
+  });
+  sock.on('connect_error', (err) => {
+    console.error('socket connect_error', err?.message || err);
   });
   sock.on('rooms:updated', () => App.onRoomsUpdated?.());
   sock.on('room:players', (players) => App.onRoomPlayers?.(players));

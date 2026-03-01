@@ -144,11 +144,13 @@ const App = {
       el.innerHTML = '';
       return;
     }
-    const label = this.currentRoomState === 'playing' ? '🎮 Wróć do gry' : '↩ Wróć do pokoju';
+    const icon = this.currentRoomState === 'playing' ? '🎮' : '↩';
+    const label = this.currentRoomState === 'playing' ? 'Gra' : 'Pokój';
     const title = this.currentRoomName ? UI.escapeHtml(this.currentRoomName) : this.currentRoomId;
     el.innerHTML = `
-      <button class="btn btn-ghost btn-sm" onclick="App.resumeActiveRoom()" title="${title}">
-        ${label}
+      <button class="btn btn-ghost btn-sm header-btn room-nav-btn" onclick="App.resumeActiveRoom()" title="${title}">
+        <span class="header-btn-emoji">${icon}</span>
+        <span class="header-btn-label">${label}</span>
       </button>
     `;
   },
@@ -306,22 +308,23 @@ const App = {
         <header class="site-header">
           <div class="site-logo">SECRET HITLER</div>
           <nav class="site-nav">
-            <button class="btn btn-ghost btn-sm nav-btn-lobby" onclick="App.goLobby()">🏠 Lobby</button>
+            <button class="btn btn-ghost btn-sm nav-btn-lobby header-btn" onclick="App.goLobby()"><span class="header-btn-emoji">🏠</span><span class="header-btn-label">Lobby</span></button>
             <span id="nav-room-actions"></span>
-            ${this.currentUser?.isAdmin ? `<button class="btn btn-ghost btn-sm nav-btn-admin" onclick="App.showAdmin()">⚙️ Admin</button>` : ''}
+            ${this.currentUser?.isAdmin ? `<button class="btn btn-ghost btn-sm nav-btn-admin header-btn" onclick="App.showAdmin()"><span class="header-btn-emoji">⚙️</span><span class="header-btn-label">Admin</span></button>` : ''}
           </nav>
           <div class="site-user">
-            <button class="btn btn-ghost btn-sm hidden user-btn-install" id="install-app-btn" onclick="App.promptInstall()">💀 Zainstaluj</button>
-            <button class="btn btn-danger btn-sm hidden user-btn-end" id="end-game-btn" onclick="Game.openEndGameModal()">🛑 Zakończ</button>
-            <button class="btn btn-ghost btn-sm user-btn-password" onclick="App.showChangePassword()">🔐 Hasło</button>
-            <button class="btn btn-ghost btn-sm mobile-chat-toggle user-btn-chat" onclick="Chat.openMobileChat()" id="mobile-chat-toggle">
-              💬 Chat
+            <button class="btn btn-ghost btn-sm hidden user-btn-install header-btn" id="install-app-btn" onclick="App.promptInstall()"><span class="header-btn-emoji">💀</span><span class="header-btn-label">Instaluj</span></button>
+            <button class="btn btn-danger btn-sm hidden user-btn-end header-btn" id="end-game-btn" onclick="Game.openEndGameModal()"><span class="header-btn-emoji">🛑</span><span class="header-btn-label">Zakończ</span></button>
+            <button class="btn btn-ghost btn-sm user-btn-password header-btn" onclick="App.showChangePassword()"><span class="header-btn-emoji">🔐</span><span class="header-btn-label">Hasło</span></button>
+            <button class="btn btn-ghost btn-sm mobile-chat-toggle user-btn-chat header-btn" onclick="Chat.openMobileChat()" id="mobile-chat-toggle">
+              <span class="header-btn-emoji">💬</span>
+              <span class="header-btn-label">Chat</span>
               <span class="mobile-chat-badge hidden" id="mobile-chat-badge">0</span>
             </button>
             <span id="conn-status" class="status-pill" style="font-size:11px;color:#4a8">🟢 Online</span>
             <span class="user-badge user-pill">${UI.escapeHtml(this.currentUser.username)}</span>
             ${this.currentUser.isAdmin ? '<span class="admin-badge user-admin-pill">Admin</span>' : ''}
-            <button class="btn btn-ghost btn-sm user-btn-logout" onclick="App.logout()">Wyloguj</button>
+            <button class="btn btn-ghost btn-sm user-btn-logout header-btn" onclick="App.logout()"><span class="header-btn-emoji">↪</span><span class="header-btn-label">Wyloguj</span></button>
           </div>
         </header>
 

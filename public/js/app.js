@@ -306,22 +306,22 @@ const App = {
         <header class="site-header">
           <div class="site-logo">SECRET HITLER</div>
           <nav class="site-nav">
-            <button class="btn btn-ghost btn-sm" onclick="App.goLobby()">🏠 Lobby</button>
+            <button class="btn btn-ghost btn-sm nav-btn-lobby" onclick="App.goLobby()">🏠 Lobby</button>
             <span id="nav-room-actions"></span>
-            ${this.currentUser?.isAdmin ? `<button class="btn btn-ghost btn-sm" onclick="App.showAdmin()">⚙️ Admin</button>` : ''}
+            ${this.currentUser?.isAdmin ? `<button class="btn btn-ghost btn-sm nav-btn-admin" onclick="App.showAdmin()">⚙️ Admin</button>` : ''}
           </nav>
           <div class="site-user">
-            <button class="btn btn-ghost btn-sm hidden" id="install-app-btn" onclick="App.promptInstall()">💀 Zainstaluj</button>
-            <button class="btn btn-danger btn-sm hidden" id="end-game-btn" onclick="Game.openEndGameModal()">🛑 Zakończ</button>
-            <button class="btn btn-ghost btn-sm" onclick="App.showChangePassword()">🔐 Hasło</button>
-            <button class="btn btn-ghost btn-sm mobile-chat-toggle" onclick="Chat.openMobileChat()" id="mobile-chat-toggle">
+            <button class="btn btn-ghost btn-sm hidden user-btn-install" id="install-app-btn" onclick="App.promptInstall()">💀 Zainstaluj</button>
+            <button class="btn btn-danger btn-sm hidden user-btn-end" id="end-game-btn" onclick="Game.openEndGameModal()">🛑 Zakończ</button>
+            <button class="btn btn-ghost btn-sm user-btn-password" onclick="App.showChangePassword()">🔐 Hasło</button>
+            <button class="btn btn-ghost btn-sm mobile-chat-toggle user-btn-chat" onclick="Chat.openMobileChat()" id="mobile-chat-toggle">
               💬 Chat
               <span class="mobile-chat-badge hidden" id="mobile-chat-badge">0</span>
             </button>
-            <span id="conn-status" style="font-size:11px;color:#4a8">🟢 Online</span>
-            <span class="user-badge">${UI.escapeHtml(this.currentUser.username)}</span>
-            ${this.currentUser.isAdmin ? '<span class="admin-badge">Admin</span>' : ''}
-            <button class="btn btn-ghost btn-sm" onclick="App.logout()">Wyloguj</button>
+            <span id="conn-status" class="status-pill" style="font-size:11px;color:#4a8">🟢 Online</span>
+            <span class="user-badge user-pill">${UI.escapeHtml(this.currentUser.username)}</span>
+            ${this.currentUser.isAdmin ? '<span class="admin-badge user-admin-pill">Admin</span>' : ''}
+            <button class="btn btn-ghost btn-sm user-btn-logout" onclick="App.logout()">Wyloguj</button>
           </div>
         </header>
 

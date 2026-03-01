@@ -17,6 +17,8 @@ const server = http.createServer(app);
 const io     = new Server(server, { cors: { origin: '*' } });
 const PORT   = process.env.PORT || 3000;
 
+app.set('trust proxy', 1);
+
 // Upewnij się że folder na sesje istnieje
 const SESSION_DIR = path.join(__dirname, '..', 'data', 'sessions');
 fs.mkdirSync(SESSION_DIR, { recursive: true });
@@ -65,11 +67,87 @@ const DISCONNECT_GRACE_MS = 90 * 1000;
 const DISCONNECT_WAIT_EXTENSION_MS = 60 * 1000;
 const DISCONNECT_CHOICES = new Set(['wait', 'takeover', 'end']);
 const SYSTEM_USER_ID = '__system__';
+const LOGIN_WINDOW_MS = 10 * 60 * 1000;
+const LOGIN_LOCK_MS = 15 * 60 * 1000;
+const LOGIN_IP_MAX_ATTEMPTS = 25;
+const LOGIN_USERNAME_MAX_ATTEMPTS = 8;
+
+const loginIpBuckets = new Map();
+const loginUsernameBuckets = new Map();
 
 const BOT_NAMES = [
   'Otto', 'Greta', 'Erika', 'Walter', 'Bruno',
   'Ingrid', 'Helmut', 'Lotte', 'Fritz', 'Karl',
 ];
+
+function normalizeUsernameKey(username) {
+  return String(username || '').trim().toLowerCase();
+}
+
+function nowMs() {
+  return Date.now();
+}
+
+function cleanupLoginBucket(map, key, currentTime = nowMs()) {
+  const bucket = map.get(key);
+  if (!bucket) return null;
+  bucket.attempts = bucket.attempts.filter((ts) => currentTime - ts <= LOGIN_WINDOW_MS);
+  if (bucket.blockedUntil && bucket.blockedUntil <= currentTime) bucket.blockedUntil = 0;
+  if (!bucket.attempts.length && !bucket.blockedUntil) {
+    map.delete(key);
+    return null;
+  }
+  return bucket;
+}
+
+function ensureLoginBucket(map, key, currentTime = nowMs()) {
+  const existing = cleanupLoginBucket(map, key, currentTime);
+  if (existing) return existing;
+  const bucket = { attempts: [], blockedUntil: 0 };
+  map.set(key, bucket);
+  return bucket;
+}
+
+function getLoginThrottleState(ipKey, usernameKey, currentTime = nowMs()) {
+  const ipBucket = ipKey ? cleanupLoginBucket(loginIpBuckets, ipKey, currentTime) : null;
+  const usernameBucket = usernameKey ? cleanupLoginBucket(loginUsernameBuckets, usernameKey, currentTime) : null;
+
+  const blockedUntil = Math.max(ipBucket?.blockedUntil || 0, usernameBucket?.blockedUntil || 0);
+  if (blockedUntil > currentTime) {
+    return { blocked: true, retryAfterMs: blockedUntil - currentTime };
+  }
+  return { blocked: false, retryAfterMs: 0 };
+}
+
+function registerFailedLogin(ipKey, usernameKey, currentTime = nowMs()) {
+  if (ipKey) {
+    const ipBucket = ensureLoginBucket(loginIpBuckets, ipKey, currentTime);
+    ipBucket.attempts.push(currentTime);
+    if (ipBucket.attempts.length >= LOGIN_IP_MAX_ATTEMPTS) {
+      ipBucket.blockedUntil = currentTime + LOGIN_LOCK_MS;
+      ipBucket.attempts = [];
+    }
+  }
+
+  if (usernameKey) {
+    const usernameBucket = ensureLoginBucket(loginUsernameBuckets, usernameKey, currentTime);
+    usernameBucket.attempts.push(currentTime);
+    if (usernameBucket.attempts.length >= LOGIN_USERNAME_MAX_ATTEMPTS) {
+      usernameBucket.blockedUntil = currentTime + LOGIN_LOCK_MS;
+      usernameBucket.attempts = [];
+    }
+  }
+}
+
+function clearLoginThrottle(ipKey, usernameKey) {
+  if (ipKey) loginIpBuckets.delete(ipKey);
+  if (usernameKey) loginUsernameBuckets.delete(usernameKey);
+}
+
+function getLoginRetryMessage(retryAfterMs) {
+  const minutes = Math.max(1, Math.ceil(retryAfterMs / 60000));
+  return `Zbyt wiele nieudanych prób logowania. Spróbuj ponownie za ${minutes} min.`;
+}
 
 // ── AUTH MIDDLEWARE ───────────────────────────────────────────────────────────
 async function destroySession(req) {
@@ -310,17 +388,29 @@ app.post('/api/login', async (req, res) => {
     const { username, password } = req.body;
     if (!username || !password) return res.status(400).json({ error: 'Podaj dane' });
 
+    const ipKey = req.ip || req.socket?.remoteAddress || 'unknown';
+    const usernameKey = normalizeUsernameKey(username);
+    const throttle = getLoginThrottleState(ipKey, usernameKey);
+    if (throttle.blocked) {
+      return res.status(429).json({ error: getLoginRetryMessage(throttle.retryAfterMs) });
+    }
+
     const user = await db.users.findByUsername(username);
-    if (!user || !bcrypt.compareSync(password, user.passwordHash))
+    if (!user || !bcrypt.compareSync(password, user.passwordHash)) {
+      registerFailedLogin(ipKey, usernameKey);
       return res.status(401).json({ error: 'Błędna nazwa lub hasło' });
-    if (!user.isActive)
+    }
+    if (!user.isActive) {
+      registerFailedLogin(ipKey, usernameKey);
       return res.status(403).json({ error: 'Konto czeka na aktywację przez administratora' });
+    }
 
     req.session.userId   = user._id;
     req.session.username = user.username;
     req.session.isAdmin  = !!user.isAdmin;
     await db.users.setLastSeen(user._id);
     const activeRoom = await getUserActiveRoom(user._id);
+    clearLoginThrottle(ipKey, usernameKey);
 
     res.json({
       ok: true,

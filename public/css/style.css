@@ -1131,6 +1131,38 @@ label { font-size: 12px; color: var(--text-dim); display: block; margin-bottom: 
     width: 100%;
     margin-left: 0;
   }
+  .site-header .btn,
+  .status-pill,
+  .user-pill,
+  .user-admin-pill {
+    height: 28px;
+    min-height: 28px;
+    max-height: 28px;
+    padding: 0 4px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .header-btn {
+    flex-direction: row;
+    gap: 0;
+  }
+  .header-btn-label {
+    display: none;
+  }
+  .header-btn-emoji {
+    font-size: 13px;
+  }
+  .mobile-chat-toggle .mobile-chat-badge {
+    position: absolute;
+    top: 1px;
+    right: 1px;
+    margin-left: 0;
+    min-width: 14px;
+    height: 14px;
+    padding: 0 3px;
+    font-size: 8px;
+  }
 }
 @media (max-width: 1179px) {
   .main-layout {
@@ -1197,19 +1229,26 @@ label { font-size: 12px; color: var(--text-dim); display: block; margin-bottom: 
   .status-pill {
     width: 100%;
     margin-left: 0;
-    min-height: 32px;
-    font-size: 9px !important;
-    padding: 4px 3px;
+    height: 28px;
+    min-height: 28px;
+    max-height: 28px;
+    font-size: 8px !important;
+    padding: 0 4px;
     display: inline-flex;
     align-items: center;
     justify-content: center;
     text-align: center;
     line-height: 1.1;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
   .site-header .btn {
     width: 100%;
-    min-height: 32px;
-    padding: 4px 3px;
+    height: 28px;
+    min-height: 28px;
+    max-height: 28px;
+    padding: 0 4px;
     font-size: 10px;
   }
   #nav-room-actions {
@@ -1222,29 +1261,41 @@ label { font-size: 12px; color: var(--text-dim); display: block; margin-bottom: 
     flex-basis: auto;
   }
   .header-btn {
-    flex-direction: column;
-    gap: 1px;
+    flex-direction: row;
+    gap: 0;
   }
-  .header-btn-emoji { font-size: 12px; }
+  .header-btn-emoji { font-size: 13px; }
   .header-btn-label {
-    font-size: 8px;
-    line-height: 1.1;
+    display: none;
   }
   .user-pill,
   .user-admin-pill {
     width: 100%;
-    min-height: 32px;
-    font-size: 9px;
-    padding: 4px 3px;
+    height: 28px;
+    min-height: 28px;
+    max-height: 28px;
+    font-size: 8px;
+    padding: 0 4px;
     display: inline-flex;
     align-items: center;
     justify-content: center;
     text-align: center;
     line-height: 1.1;
+    white-space: nowrap;
   }
   .user-pill {
     overflow: hidden;
     text-overflow: ellipsis;
+  }
+  .mobile-chat-toggle .mobile-chat-badge {
+    position: absolute;
+    top: 1px;
+    right: 1px;
+    margin-left: 0;
+    min-width: 14px;
+    height: 14px;
+    padding: 0 3px;
+    font-size: 8px;
   }
   .policy-boards { grid-template-columns: 1fr; }
   .auth-box { width: min(100%, 420px); padding: 24px 18px; }

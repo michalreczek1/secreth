@@ -80,7 +80,9 @@ const App = {
 
     const update = () => {
       const viewportHeight = window.visualViewport?.height || window.innerHeight;
+      const viewportWidth = window.visualViewport?.width || window.innerWidth;
       document.documentElement.style.setProperty('--viewport-h', `${Math.round(viewportHeight)}px`);
+      document.documentElement.style.setProperty('--viewport-w', `${Math.round(viewportWidth)}px`);
     };
 
     update();

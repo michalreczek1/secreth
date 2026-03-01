@@ -72,7 +72,7 @@ const Admin = {
               <td><strong>${UI.escapeHtml(u.username)}</strong></td>
               <td><span style="color:#4a8">✅ Aktywny</span></td>
               <td>${u.isAdmin ? '<span class="badge badge-hitler" style="font-size:9px">Admin</span>' : '<span class="text-dim">Gracz</span>'}</td>
-              <td class="text-dim">${UI.formatDate(u.lastSeen)}</td>
+              <td class="text-dim">${UI.formatDateTime(u.lastSeen)}</td>
               <td style="display:flex;gap:6px;flex-wrap:wrap">
                 ${!u.isAdmin ? `<button class="btn btn-ghost btn-sm" onclick='Admin.deactivate(${JSON.stringify(u.id)}, ${JSON.stringify(u.username)})'>Deaktywuj</button>` : ''}
                 <button class="btn btn-ghost btn-sm" onclick='Admin.toggleAdmin(${JSON.stringify(u.id)}, ${JSON.stringify(u.username)}, ${u.isAdmin})'>

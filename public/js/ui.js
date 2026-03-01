@@ -36,6 +36,18 @@ const UI = {
     return d.toLocaleDateString('pl');
   },
 
+  formatDateTime(iso) {
+    if (!iso) return '—';
+    const d = new Date(iso);
+    return d.toLocaleString('pl', {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  },
+
   escapeHtml(str) {
     return String(str)
       .replace(/&/g, '&amp;')

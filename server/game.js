@@ -547,6 +547,7 @@ function getPlayerView(state, userId) {
         role: 'president',
         username: session.presidentName,
         optionCount: 3,
+        actualSummary: session.presidentActual || null,
       };
       break;
     }
@@ -556,6 +557,7 @@ function getPlayerView(state, userId) {
         role: 'chancellor',
         username: session.chancellorName,
         optionCount: 2,
+        actualSummary: session.chancellorActual || null,
       };
       break;
     }

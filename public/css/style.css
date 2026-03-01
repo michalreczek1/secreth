@@ -763,6 +763,22 @@ label { font-size: 12px; color: var(--text-dim); display: block; margin-bottom: 
   color: var(--text-dim);
   text-align: center;
 }
+.claim-actual-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  align-items: center;
+  padding: 12px 14px;
+  border: 1px solid rgba(201,162,39,.35);
+  background: rgba(201,162,39,.08);
+}
+.claim-actual-label {
+  font-family: 'Special Elite', monospace;
+  font-size: 11px;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--gold);
+}
 .claim-option-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

@@ -980,6 +980,7 @@ const Game = {
     const isPresident = claim.role === 'president';
     const roleLabel = isPresident ? 'Prezydent' : 'Kanclerz';
     const options = isPresident ? ['LLL', 'LLF', 'LFF', 'FFF'] : ['LL', 'LF', 'FF'];
+    const actualSummary = claim.actualSummary || '';
     const optionTiles = options.map((summary) => {
       const isSelected = this.selectedClaimSummary === summary;
       return `
@@ -997,6 +998,12 @@ const Game = {
           <div class="event-modal-lead">
             Wybierz, co publicznie deklarujesz pozostałym graczom jako <strong>${roleLabel}</strong>.
           </div>
+          ${actualSummary ? `
+            <div class="claim-actual-preview">
+              <div class="claim-actual-label">Twój prywatny podgląd kart</div>
+              <div class="claim-summary-icons">${this.renderClaimSummary(actualSummary)}</div>
+            </div>
+          ` : ''}
           <div class="claim-modal-note">
             To jest twoja deklaracja dla stołu. System opublikuje ją na czacie pokojowym. Możesz powiedzieć prawdę albo blefować.
           </div>

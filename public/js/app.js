@@ -120,6 +120,8 @@ const App = {
 
   updateHeaderRoomAction() {
     const el = document.getElementById('nav-room-actions');
+    const endGameBtn = document.getElementById('end-game-btn');
+    if (endGameBtn) endGameBtn.classList.toggle('hidden', !(this.currentRoomId && this.currentRoomState === 'playing'));
     if (!el) return;
     if (!this.currentRoomId) {
       el.innerHTML = '';
@@ -281,6 +283,7 @@ const App = {
           </nav>
           <div class="site-user">
             <button class="btn btn-ghost btn-sm hidden" id="install-app-btn" onclick="App.promptInstall()">💀 Zainstaluj</button>
+            <button class="btn btn-danger btn-sm hidden" id="end-game-btn" onclick="Game.openEndGameModal()">🛑 Zakończ</button>
             <button class="btn btn-ghost btn-sm" onclick="App.showChangePassword()">🔐 Hasło</button>
             <button class="btn btn-ghost btn-sm mobile-chat-toggle" onclick="Chat.openMobileChat()" id="mobile-chat-toggle">
               💬 Chat

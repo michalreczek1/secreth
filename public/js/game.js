@@ -579,9 +579,9 @@ const Game = {
     }).join('');
 
     return `
-      <div style="background:rgba(0,0,0,.3);border:1px solid var(--border);padding:12px">
+      <div class="players-side-panel">
         <div class="section-title">Gracze</div>
-        <div style="display:flex;flex-direction:column;gap:4px">${rows}</div>
+        <div class="players-side-list">${rows}</div>
       </div>
     `;
   },
@@ -628,7 +628,7 @@ const Game = {
     ).join('');
     return `
       <div class="game-log-panel">
-        <div class="section-title" style="font-size:10px;margin-bottom:6px">Dziennik Zdarzeń</div>
+        <div class="section-title game-subsection-title">Dziennik Zdarzeń</div>
         <div class="game-log">${entries}</div>
       </div>
     `;
@@ -658,7 +658,7 @@ const Game = {
 
     return `
       <div class="vote-history-panel">
-        <div class="section-title" style="font-size:10px;margin-bottom:6px">Historia Głosowań</div>
+        <div class="section-title game-subsection-title">Historia Głosowań</div>
         <div class="vote-history-list">
           ${entries || '<div class="vote-history-empty">Brak zakończonych głosowań w tej partii.</div>'}
         </div>

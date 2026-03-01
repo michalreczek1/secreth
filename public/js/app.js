@@ -12,9 +12,11 @@ const App = {
   rooms: [],
   deferredInstallPrompt: null,
   pwaSetupDone: false,
+  viewportSetupDone: false,
 
   // ── INIT ─────────────────────────────────────────────────────────────────────
   async init() {
+    this.setupViewport();
     this.setupPwa();
     const { user, activeRoom } = await API.me();
     if (user) {
@@ -70,6 +72,21 @@ const App = {
       this.deferredInstallPrompt = null;
       this.updateInstallButton();
     });
+  },
+
+  setupViewport() {
+    if (this.viewportSetupDone) return;
+    this.viewportSetupDone = true;
+
+    const update = () => {
+      const viewportHeight = window.visualViewport?.height || window.innerHeight;
+      document.documentElement.style.setProperty('--viewport-h', `${Math.round(viewportHeight)}px`);
+    };
+
+    update();
+    window.addEventListener('resize', update);
+    window.addEventListener('orientationchange', update);
+    window.visualViewport?.addEventListener('resize', update);
   },
 
   isStandalone() {
@@ -351,8 +368,8 @@ const App = {
     if (!el) return;
 
     el.innerHTML = `
-      <div style="max-width:700px;margin:0 auto">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px">
+      <div class="page-shell page-shell-lobby">
+        <div class="page-head">
           <h2 class="font-title" style="font-size:20px;letter-spacing:3px;color:var(--gold)">LOBBY</h2>
           <button class="btn btn-gold" onclick="App.showCreateRoom()">+ Utwórz pokój</button>
         </div>
@@ -517,8 +534,8 @@ const App = {
     if (room.state === 'playing' && !resetToLobby) {
       // Gra trwa — pokaż widok gry
       el.innerHTML = `
-        <div style="max-width:820px;margin:0 auto">
-          <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px">
+        <div class="page-shell page-shell-game">
+          <div class="page-head page-head-tight">
             <button class="btn btn-ghost btn-sm" onclick="App.goLobby()">← Lobby</button>
             <h2 class="font-title" style="font-size:16px;letter-spacing:2px;color:var(--gold)">${UI.escapeHtml(room.name)}</h2>
             <span class="room-state state-playing" style="font-size:10px">W GRZE</span>
@@ -544,8 +561,8 @@ const App = {
     const canManageBots = room.state === 'lobby' && (isOwner || this.currentUser?.isAdmin);
 
     el.innerHTML = `
-      <div style="max-width:600px;margin:0 auto">
-        <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px">
+      <div class="page-shell page-shell-room">
+        <div class="page-head page-head-tight">
           <button class="btn btn-ghost btn-sm" onclick="App.goLobby()">← Lobby</button>
           <h2 class="font-title" style="font-size:18px;letter-spacing:3px;color:var(--gold)">${UI.escapeHtml(room.name)}</h2>
           <span class="room-state state-lobby">LOBBY</span>
@@ -704,7 +721,7 @@ const App = {
     if (!el) return;
 
     el.innerHTML = `
-      <div style="max-width:800px;margin:0 auto">
+      <div class="page-shell page-shell-admin">
         <h2 class="font-title" style="font-size:20px;letter-spacing:3px;color:var(--gold);margin-bottom:20px">
           ⚙️ PANEL ADMINISTRATORA
         </h2>

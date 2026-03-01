@@ -146,10 +146,10 @@ function clearRoomBotsMeta(roomId) {
   roomBots.delete(roomId);
 }
 
-function hasControllingHumanInGame(roomId) {
+function hasConnectedHumanInGame(roomId) {
   const state = activeGames.get(roomId)?.state;
   if (!state?.players) return false;
-  return state.players.some((player) => !player.dead && !isBotId(player.id) && player.connected !== false && !state.botControlled?.[player.id]);
+  return state.players.some((player) => !isBotId(player.id) && player.connected !== false && !state.botControlled?.[player.id]);
 }
 
 function getGameBotIds(roomId) {
@@ -194,6 +194,7 @@ function emitToPlayerSockets(ag, userId, eventName, payload) {
 function ensureGameMetaState(state) {
   if (!state.botControlled || typeof state.botControlled !== 'object') state.botControlled = {};
   if (!Object.prototype.hasOwnProperty.call(state, 'disconnectControl')) state.disconnectControl = null;
+  if (!Object.prototype.hasOwnProperty.call(state, 'endVoteControl')) state.endVoteControl = null;
   return state;
 }
 
@@ -211,10 +212,18 @@ function isDisconnectPauseActive(state) {
   return !!state?.disconnectControl && (state.disconnectControl.phase === 'waiting' || state.disconnectControl.phase === 'decision');
 }
 
+function isEndVoteActive(state) {
+  return !!state?.endVoteControl;
+}
+
+function isGamePauseActive(state) {
+  return isDisconnectPauseActive(state) || isEndVoteActive(state);
+}
+
 function shouldBotsPlay(roomId) {
   const ag = activeGames.get(roomId);
   const bots = getAutomatedPlayerIds(roomId);
-  return bots.size > 0 && !!ag && ag.state.phase !== 'end' && !isDisconnectPauseActive(ag.state) && hasControllingHumanInGame(roomId);
+  return bots.size > 0 && !!ag && ag.state.phase !== 'end' && !isGamePauseActive(ag.state) && hasConnectedHumanInGame(roomId);
 }
 
 function pickBotName(existingNames) {
@@ -747,6 +756,18 @@ io.on('connection', async (socket) => {
     }
   });
 
+  socket.on('game:endVote', async ({ roomId, action, accept }, callback) => {
+    try {
+      if (!(await ensureSocketUserActive(callback))) return;
+      if (action === 'request') await requestEndGameVote(roomId, userId);
+      else if (action === 'respond') await respondEndGameVote(roomId, userId, !!accept);
+      else throw new Error('Nieznana akcja zakończenia gry');
+      callback?.({ ok: true });
+    } catch (e) {
+      callback?.({ error: e.message });
+    }
+  });
+
   socket.on('game:restart', async (roomId, callback) => {
     try {
       if (!(await ensureSocketUserActive(callback))) return;
@@ -890,6 +911,26 @@ function buildDisconnectView(state, userId) {
   };
 }
 
+function getEndVoteEligibleVoters(state) {
+  ensureGameMetaState(state);
+  return state.players
+    .filter((p) => !isBotId(p.id) && p.connected !== false && !state.botControlled?.[p.id])
+    .map((p) => p.id);
+}
+
+function buildEndVoteView(state, userId) {
+  const control = state.endVoteControl;
+  if (!control) return null;
+  const confirmedCount = Object.values(control.votes || {}).filter((vote) => vote === 'yes').length;
+  return {
+    initiatedByUsername: control.initiatedByUsername,
+    myVote: control.votes?.[userId] || null,
+    canVote: control.eligibleVoterIds?.includes(userId) && !control.votes?.[userId],
+    eligibleCount: control.eligibleVoterIds?.length || 0,
+    confirmedCount,
+  };
+}
+
 function buildGameView(roomId, userId) {
   const ag = activeGames.get(roomId);
   if (!ag?.state) return null;
@@ -900,7 +941,90 @@ function buildGameView(roomId, userId) {
     botControlled: !!state.botControlled?.[p.id],
   }));
   view.disconnectControl = buildDisconnectView(state, userId);
+  view.endVoteControl = buildEndVoteView(state, userId);
   return view;
+}
+
+async function finishGameByConsensus(roomId, initiatedByUsername = 'Gracze') {
+  const ag = activeGames.get(roomId);
+  if (!ag?.state) throw new Error('Brak aktywnej gry');
+
+  clearBotTimer(roomId);
+  clearDisconnectTimer(roomId);
+  activeGames.delete(roomId);
+  await db.rooms.setState(roomId, 'lobby', null);
+  io.to(`room:${roomId}`).emit('game:reset');
+  io.emit('rooms:updated');
+  await emitSystemRoomMessage(roomId, `🛑 Gra została zakończona na zgodny wniosek graczy. Inicjator: ${initiatedByUsername}.`);
+}
+
+async function requestEndGameVote(roomId, userId) {
+  const ag = activeGames.get(roomId);
+  if (!ag?.state) throw new Error('Brak aktywnej gry');
+  const state = ensureGameMetaState(ag.state);
+  if (state.phase === 'end') throw new Error('Gra już się zakończyła');
+  if (isDisconnectPauseActive(state)) throw new Error('Nie można kończyć gry podczas obsługi rozłączenia gracza');
+  if (state.endVoteControl) throw new Error('Głosowanie o zakończenie gry już trwa');
+
+  const player = state.players.find((p) => p.id === userId);
+  if (!player || isBotId(player.id) || player.connected === false || state.botControlled?.[userId]) {
+    throw new Error('Nie możesz rozpocząć głosowania o zakończenie gry');
+  }
+
+  const eligibleVoterIds = getEndVoteEligibleVoters(state);
+  if (!eligibleVoterIds.includes(userId)) throw new Error('Nie możesz rozpocząć tego głosowania');
+  if (eligibleVoterIds.length <= 1) {
+    await finishGameByConsensus(roomId, player.username);
+    return;
+  }
+
+  state.endVoteControl = {
+    initiatedByUserId: userId,
+    initiatedByUsername: player.username,
+    eligibleVoterIds,
+    votes: { [userId]: 'yes' },
+  };
+  ag.state = state;
+  await persistActiveGameState(roomId);
+  broadcastGameState(roomId);
+  await emitSystemRoomMessage(roomId, `🛑 ${player.username} proponuje zakończenie gry. Potrzebna jest zgoda wszystkich ludzkich graczy.`);
+}
+
+async function respondEndGameVote(roomId, userId, accept) {
+  const ag = activeGames.get(roomId);
+  if (!ag?.state) throw new Error('Brak aktywnej gry');
+  const state = ensureGameMetaState(ag.state);
+  const control = state.endVoteControl;
+  if (!control) throw new Error('Brak aktywnego głosowania o zakończenie gry');
+  if (!control.eligibleVoterIds.includes(userId)) throw new Error('Nie możesz głosować w tej decyzji');
+  if (control.votes?.[userId]) throw new Error('Już odpowiedziałeś');
+
+  const player = state.players.find((p) => p.id === userId);
+  if (!player) throw new Error('Nie jesteś graczem tej partii');
+
+  if (!accept) {
+    state.endVoteControl = null;
+    ag.state = state;
+    await persistActiveGameState(roomId);
+    broadcastGameState(roomId);
+    await emitSystemRoomMessage(roomId, `▶️ ${player.username} odrzucił zakończenie gry. Partia trwa dalej.`);
+    if (shouldBotsPlay(roomId)) scheduleBots(roomId, 700);
+    return;
+  }
+
+  control.votes = { ...(control.votes || {}), [userId]: 'yes' };
+  state.endVoteControl = control;
+  ag.state = state;
+
+  const confirmedCount = Object.values(control.votes).filter((vote) => vote === 'yes').length;
+  if (confirmedCount >= control.eligibleVoterIds.length) {
+    await finishGameByConsensus(roomId, control.initiatedByUsername);
+    return;
+  }
+
+  await persistActiveGameState(roomId);
+  broadcastGameState(roomId);
+  await emitSystemRoomMessage(roomId, `✅ ${player.username} potwierdził zakończenie gry (${confirmedCount}/${control.eligibleVoterIds.length}).`);
 }
 
 async function submitLegislativeClaim(roomId, userId, sessionId, summary, skipped = false) {
@@ -1173,7 +1297,7 @@ async function processGameAction(roomId, userId, action, payload = {}) {
   if (!ag) throw new Error('Brak aktywnej gry');
   ensureGameMetaState(ag.state);
   if (ag.state.phase === 'end') throw new Error('Gra się skończyła');
-  if (isDisconnectPauseActive(ag.state)) throw new Error('Gra jest wstrzymana z powodu rozłączenia gracza');
+  if (isGamePauseActive(ag.state)) throw new Error('Gra jest tymczasowo wstrzymana');
 
   let newState;
   let extra = {};

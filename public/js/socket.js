@@ -129,6 +129,15 @@ const Socket = {
     }));
   },
 
+  endGameVote(roomId, action, accept = false) {
+    return withSocketAck(() => new Promise((resolve, reject) => {
+      sock.emit('game:endVote', { roomId, action, accept }, (res) => {
+        if (res?.error) reject(new Error(res.error));
+        else resolve(res);
+      });
+    }));
+  },
+
   restartGame(roomId) {
     return withSocketAck(() => new Promise((resolve, reject) => {
       sock.emit('game:restart', roomId, (res) => {

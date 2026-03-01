@@ -99,6 +99,7 @@ const Game = {
     main.innerHTML = `
       <div class="game-layout">
         ${this.renderDisconnectControl(s)}
+        ${this.renderEndVoteControl(s)}
         ${this.renderBoards(s)}
         ${this.renderTracker(s)}
         <div class="game-columns">
@@ -183,6 +184,49 @@ const Game = {
         ` : `
           <div class="disconnect-text disconnect-muted">
             ${myVoteLabel ? `Oddałeś głos: <strong>${UI.escapeHtml(myVoteLabel)}</strong>.` : `Czekamy na głosy (${control.eligibleCount || 0} uprawnionych).`}
+          </div>
+        `}
+      </div>
+    `;
+  },
+
+  renderEndVoteControl(s) {
+    const me = s.players[s.myIdx];
+    const control = s.endVoteControl;
+    const iCanManageEndVote = me && me.connected !== false && !me.botControlled;
+
+    if (!control) {
+      if (!iCanManageEndVote) return '';
+      return `
+        <div class="disconnect-panel disconnect-panel-endvote">
+          <div class="disconnect-title">🛑 Zakończenie Gry</div>
+          <div class="disconnect-text">
+            Zatrzyma grę i cofnie pokój do lobby. Wymagana jest zgoda wszystkich ludzkich graczy obecnych w partii.
+          </div>
+          <div class="disconnect-actions">
+            <button class="btn btn-danger btn-sm" onclick="Game.requestEndGame()">Zaproponuj zakończenie gry</button>
+          </div>
+        </div>
+      `;
+    }
+
+    return `
+      <div class="disconnect-panel disconnect-panel-endvote">
+        <div class="disconnect-title">🛑 Głosowanie O Zakończenie Gry</div>
+        <div class="disconnect-text">
+          <strong>${UI.escapeHtml(control.initiatedByUsername)}</strong> chce zakończyć partię.
+          Potwierdzenia: <strong>${control.confirmedCount || 0}/${control.eligibleCount || 0}</strong>.
+        </div>
+        ${control.canVote ? `
+          <div class="disconnect-actions">
+            <button class="btn btn-gold btn-sm" onclick="Game.respondEndGameVote(true)">Potwierdź</button>
+            <button class="btn btn-ghost btn-sm" onclick="Game.respondEndGameVote(false)">Odrzuć</button>
+          </div>
+        ` : `
+          <div class="disconnect-text disconnect-muted">
+            ${control.myVote === 'yes'
+              ? 'Twoje potwierdzenie zostało zapisane.'
+              : 'Czekamy na odpowiedzi pozostałych graczy.'}
           </div>
         `}
       </div>
@@ -1054,6 +1098,26 @@ const Game = {
     if (!this.roomId) return;
     try {
       await Socket.disconnectDecision(this.roomId, choice);
+    } catch (e) {
+      alert(e.message);
+    }
+  },
+
+  async requestEndGame() {
+    if (!this.roomId) return;
+    const ok = await UI.confirm('Zaproponować zakończenie gry i powrót pokoju do lobby?');
+    if (!ok) return;
+    try {
+      await Socket.endGameVote(this.roomId, 'request');
+    } catch (e) {
+      alert(e.message);
+    }
+  },
+
+  async respondEndGameVote(accept) {
+    if (!this.roomId) return;
+    try {
+      await Socket.endGameVote(this.roomId, 'respond', accept);
     } catch (e) {
       alert(e.message);
     }

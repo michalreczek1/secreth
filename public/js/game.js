@@ -984,7 +984,7 @@ const Game = {
     const optionTiles = options.map((summary) => {
       const isSelected = this.selectedClaimSummary === summary;
       return `
-        <button class="claim-summary-tile ${isSelected ? 'selected' : ''}" onclick="Game.selectClaimSummary('${summary}')" type="button">
+        <button class="claim-summary-tile ${isSelected ? 'selected' : ''}" data-claim-summary="${summary}" onclick="Game.selectClaimSummary('${summary}')" type="button">
           <span class="claim-summary-icons">${this.renderClaimSummary(summary)}</span>
           <span class="claim-summary-text">${summary}</span>
         </button>
@@ -1000,7 +1000,7 @@ const Game = {
           </div>
           ${actualSummary ? `
             <div class="claim-actual-preview">
-              <div class="claim-actual-label">Twój prywatny podgląd kart</div>
+              <div class="claim-actual-label">Takie karty miałeś:</div>
               <div class="claim-summary-icons">${this.renderClaimSummary(actualSummary)}</div>
             </div>
           ` : ''}
@@ -1012,7 +1012,7 @@ const Game = {
       `,
       actions: `
         <button class="btn btn-ghost" style="flex:1" onclick="UI.closeModal()">Później</button>
-        <button class="btn btn-gold" style="flex:1" ${this.selectedClaimSummary ? '' : 'disabled'} onclick="Game.declareClaim('${claim.sessionId}', Game.selectedClaimSummary, false)">Zatwierdź</button>
+        <button class="btn btn-gold" id="claim-confirm-btn" style="flex:1" ${this.selectedClaimSummary ? '' : 'disabled'} onclick="Game.declareClaim('${claim.sessionId}', Game.selectedClaimSummary, false)">Zatwierdź</button>
         <button class="btn btn-red" style="flex:1" onclick="Game.declareClaim('${claim.sessionId}', '', true)">Pomiń deklarację</button>
       `,
     });
@@ -1027,8 +1027,11 @@ const Game = {
 
   selectClaimSummary(summary) {
     this.selectedClaimSummary = summary;
-    const claim = this.activeClaimPrompt || this.state?.pendingClaim;
-    if (claim) this.showClaimModal(claim);
+    document.querySelectorAll('[data-claim-summary]').forEach((el) => {
+      el.classList.toggle('selected', el.getAttribute('data-claim-summary') === summary);
+    });
+    const confirmBtn = document.getElementById('claim-confirm-btn');
+    if (confirmBtn) confirmBtn.disabled = !this.selectedClaimSummary;
   },
 
   // ── AKCJE ──────────────────────────────────────────────────────────────────

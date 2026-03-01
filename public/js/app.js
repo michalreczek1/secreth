@@ -12,9 +12,11 @@ const App = {
   rooms: [],
   deferredInstallPrompt: null,
   pwaSetupDone: false,
+  viewportSetupDone: false,
 
   // ── INIT ─────────────────────────────────────────────────────────────────────
   async init() {
+    this.setupViewport();
     this.setupPwa();
     const { user, activeRoom } = await API.me();
     if (user) {
@@ -72,6 +74,23 @@ const App = {
     });
   },
 
+  setupViewport() {
+    if (this.viewportSetupDone) return;
+    this.viewportSetupDone = true;
+
+    const update = () => {
+      const viewportHeight = window.visualViewport?.height || window.innerHeight;
+      const viewportWidth = window.visualViewport?.width || window.innerWidth;
+      document.documentElement.style.setProperty('--viewport-h', `${Math.round(viewportHeight)}px`);
+      document.documentElement.style.setProperty('--viewport-w', `${Math.round(viewportWidth)}px`);
+    };
+
+    update();
+    window.addEventListener('resize', update);
+    window.addEventListener('orientationchange', update);
+    window.visualViewport?.addEventListener('resize', update);
+  },
+
   isStandalone() {
     return window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
   },
@@ -127,11 +146,13 @@ const App = {
       el.innerHTML = '';
       return;
     }
-    const label = this.currentRoomState === 'playing' ? '🎮 Wróć do gry' : '↩ Wróć do pokoju';
+    const icon = this.currentRoomState === 'playing' ? '🎮' : '↩';
+    const label = this.currentRoomState === 'playing' ? 'Gra' : 'Pokój';
     const title = this.currentRoomName ? UI.escapeHtml(this.currentRoomName) : this.currentRoomId;
     el.innerHTML = `
-      <button class="btn btn-ghost btn-sm" onclick="App.resumeActiveRoom()" title="${title}">
-        ${label}
+      <button class="btn btn-ghost btn-sm header-btn room-nav-btn" onclick="App.resumeActiveRoom()" title="${title}">
+        <span class="header-btn-emoji">${icon}</span>
+        <span class="header-btn-label">${label}</span>
       </button>
     `;
   },
@@ -289,22 +310,23 @@ const App = {
         <header class="site-header">
           <div class="site-logo">SECRET HITLER</div>
           <nav class="site-nav">
-            <button class="btn btn-ghost btn-sm" onclick="App.goLobby()">🏠 Lobby</button>
+            <button class="btn btn-ghost btn-sm nav-btn-lobby header-btn" onclick="App.goLobby()"><span class="header-btn-emoji">🏠</span><span class="header-btn-label">Lobby</span></button>
             <span id="nav-room-actions"></span>
-            ${this.currentUser?.isAdmin ? `<button class="btn btn-ghost btn-sm" onclick="App.showAdmin()">⚙️ Admin</button>` : ''}
+            ${this.currentUser?.isAdmin ? `<button class="btn btn-ghost btn-sm nav-btn-admin header-btn" onclick="App.showAdmin()"><span class="header-btn-emoji">⚙️</span><span class="header-btn-label">Admin</span></button>` : ''}
           </nav>
           <div class="site-user">
-            <button class="btn btn-ghost btn-sm hidden" id="install-app-btn" onclick="App.promptInstall()">💀 Zainstaluj</button>
-            <button class="btn btn-danger btn-sm hidden" id="end-game-btn" onclick="Game.openEndGameModal()">🛑 Zakończ</button>
-            <button class="btn btn-ghost btn-sm" onclick="App.showChangePassword()">🔐 Hasło</button>
-            <button class="btn btn-ghost btn-sm mobile-chat-toggle" onclick="Chat.openMobileChat()" id="mobile-chat-toggle">
-              💬 Chat
+            <button class="btn btn-ghost btn-sm hidden user-btn-install header-btn" id="install-app-btn" onclick="App.promptInstall()"><span class="header-btn-emoji">💀</span><span class="header-btn-label">Instaluj</span></button>
+            <button class="btn btn-danger btn-sm hidden user-btn-end header-btn" id="end-game-btn" onclick="Game.openEndGameModal()"><span class="header-btn-emoji">🛑</span><span class="header-btn-label">Zakończ</span></button>
+            <button class="btn btn-ghost btn-sm user-btn-password header-btn" onclick="App.showChangePassword()"><span class="header-btn-emoji">🔐</span><span class="header-btn-label">Hasło</span></button>
+            <button class="btn btn-ghost btn-sm mobile-chat-toggle user-btn-chat header-btn" onclick="Chat.openMobileChat()" id="mobile-chat-toggle">
+              <span class="header-btn-emoji">💬</span>
+              <span class="header-btn-label">Chat</span>
               <span class="mobile-chat-badge hidden" id="mobile-chat-badge">0</span>
             </button>
-            <span id="conn-status" style="font-size:11px;color:#4a8">🟢 Online</span>
-            <span class="user-badge">${UI.escapeHtml(this.currentUser.username)}</span>
-            ${this.currentUser.isAdmin ? '<span class="admin-badge">Admin</span>' : ''}
-            <button class="btn btn-ghost btn-sm" onclick="App.logout()">Wyloguj</button>
+            <span id="conn-status" class="status-pill" style="font-size:11px;color:#4a8">🟢 Online</span>
+            <span class="user-badge user-pill">${UI.escapeHtml(this.currentUser.username)}</span>
+            ${this.currentUser.isAdmin ? '<span class="admin-badge user-admin-pill">Admin</span>' : ''}
+            <button class="btn btn-ghost btn-sm user-btn-logout header-btn" onclick="App.logout()"><span class="header-btn-emoji">↪</span><span class="header-btn-label">Wyloguj</span></button>
           </div>
         </header>
 
@@ -351,8 +373,8 @@ const App = {
     if (!el) return;
 
     el.innerHTML = `
-      <div style="max-width:700px;margin:0 auto">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px">
+      <div class="page-shell page-shell-lobby">
+        <div class="page-head">
           <h2 class="font-title" style="font-size:20px;letter-spacing:3px;color:var(--gold)">LOBBY</h2>
           <button class="btn btn-gold" onclick="App.showCreateRoom()">+ Utwórz pokój</button>
         </div>
@@ -517,8 +539,8 @@ const App = {
     if (room.state === 'playing' && !resetToLobby) {
       // Gra trwa — pokaż widok gry
       el.innerHTML = `
-        <div style="max-width:820px;margin:0 auto">
-          <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px">
+        <div class="page-shell page-shell-game">
+          <div class="page-head page-head-tight">
             <button class="btn btn-ghost btn-sm" onclick="App.goLobby()">← Lobby</button>
             <h2 class="font-title" style="font-size:16px;letter-spacing:2px;color:var(--gold)">${UI.escapeHtml(room.name)}</h2>
             <span class="room-state state-playing" style="font-size:10px">W GRZE</span>
@@ -544,8 +566,8 @@ const App = {
     const canManageBots = room.state === 'lobby' && (isOwner || this.currentUser?.isAdmin);
 
     el.innerHTML = `
-      <div style="max-width:600px;margin:0 auto">
-        <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px">
+      <div class="page-shell page-shell-room">
+        <div class="page-head page-head-tight">
           <button class="btn btn-ghost btn-sm" onclick="App.goLobby()">← Lobby</button>
           <h2 class="font-title" style="font-size:18px;letter-spacing:3px;color:var(--gold)">${UI.escapeHtml(room.name)}</h2>
           <span class="room-state state-lobby">LOBBY</span>
@@ -704,7 +726,7 @@ const App = {
     if (!el) return;
 
     el.innerHTML = `
-      <div style="max-width:800px;margin:0 auto">
+      <div class="page-shell page-shell-admin">
         <h2 class="font-title" style="font-size:20px;letter-spacing:3px;color:var(--gold);margin-bottom:20px">
           ⚙️ PANEL ADMINISTRATORA
         </h2>

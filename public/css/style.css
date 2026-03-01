@@ -1123,6 +1123,10 @@ label { font-size: 12px; color: var(--text-dim); display: block; margin-bottom: 
     height: clamp(240px, 28dvh, 360px);
     max-height: clamp(240px, 28dvh, 360px);
   }
+  .vote-history-list,
+  .game-log {
+    overscroll-behavior-y: auto;
+  }
 }
 @media (max-width: 1200px) {
   .vote-row { gap: 10px; }
@@ -1239,6 +1243,10 @@ label { font-size: 12px; color: var(--text-dim); display: block; margin-bottom: 
     min-height: 0;
     max-height: clamp(200px, 26dvh, 280px);
     padding: 12px;
+  }
+  .vote-history-list,
+  .game-log {
+    overscroll-behavior-y: auto;
   }
   .log-entry { font-size: 15px; }
   .vote-history-head { flex-direction: column; }

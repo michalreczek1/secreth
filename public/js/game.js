@@ -15,6 +15,9 @@ const Game = {
   shownClaimKey: null,
   selectedClaimSummary: null,
   activeClaimPrompt: null,
+  pendingVoteChoice: null,
+  lastVoteTapAt: 0,
+  lastVoteTapChoice: null,
 
   sameId(a, b) {
     return String(a) === String(b);
@@ -59,12 +62,16 @@ const Game = {
     this.shownClaimKey = null;
     this.selectedClaimSummary = null;
     this.activeClaimPrompt = null;
+    this.pendingVoteChoice = null;
+    this.lastVoteTapAt = 0;
+    this.lastVoteTapChoice = null;
   },
 
   // ── SOCKET EVENTS ──────────────────────────────────────────────────────────
   onState(state) {
     const prevState = this.state;
     this.state = state;
+    if (state?.phase !== 'vote' || state?.myVote) this.pendingVoteChoice = null;
     if (!state?.pendingClaim) this.activeClaimPrompt = null;
     this.render();
     this.updateDisconnectTicker();
@@ -353,6 +360,7 @@ const Game = {
     const president = s.players[s.presidentIdx];
     const chancellor = s.chancellorIdx != null ? s.players[s.chancellorIdx] : null;
     const myVote = s.myVote || null;
+    const pendingVote = !myVote ? this.pendingVoteChoice : null;
     const votedCount = Number(s.votesSubmitted || 0);
     const aliveCount = s.players.filter(p => !p.dead).length;
 
@@ -369,6 +377,19 @@ const Game = {
       `;
     }
 
+    if (pendingVote) {
+      return `
+        <div class="action-desc">
+          Wysyłanie twojego głosu: <strong style="color:${pendingVote === 'Ja' ? 'var(--liberal)' : 'var(--fascist)'}">${pendingVote}!</strong><br>
+          Czekamy na potwierdzenie z serwera... (${votedCount}/${aliveCount})
+        </div>
+        <div class="notice notice-info" style="margin-top:12px">
+          Prezydent: <strong>${UI.escapeHtml(president?.username)}</strong><br>
+          Kanclerz: <strong>${UI.escapeHtml(chancellor?.username)}</strong>
+        </div>
+      `;
+    }
+
     return `
       <div class="action-desc">
         Głosuj na proponowany rząd:<br>
@@ -376,11 +397,11 @@ const Game = {
         🏛️ <strong>${UI.escapeHtml(chancellor?.username)}</strong> (Kanclerz)
       </div>
       <div class="vote-row">
-        <button class="btn btn-blue vote-btn" onclick="Game.action('vote', {choice:'Ja'})">
+        <button class="btn btn-blue vote-btn" onclick="Game.submitVote('Ja', event)" onpointerdown="Game.submitVote('Ja', event)">
           <span class="vote-btn-icon" aria-hidden="true">✅</span>
           <span class="vote-btn-label">JA!</span>
         </button>
-        <button class="btn btn-red vote-btn" onclick="Game.action('vote', {choice:'Nein'})">
+        <button class="btn btn-red vote-btn" onclick="Game.submitVote('Nein', event)" onpointerdown="Game.submitVote('Nein', event)">
           <span class="vote-btn-icon" aria-hidden="true">❌</span>
           <span class="vote-btn-label">NEIN!</span>
         </button>
@@ -1041,6 +1062,27 @@ const Game = {
     try {
       await Socket.gameAction(this.roomId, name, payload);
     } catch (e) {
+      const el = document.getElementById('game-error');
+      if (el) { el.textContent = e.message; el.style.display = 'block'; setTimeout(() => el.style.display = 'none', 3000); }
+      else alert(e.message);
+    }
+  },
+
+  async submitVote(choice, event) {
+    event?.preventDefault?.();
+    event?.stopPropagation?.();
+    if (!this.roomId || this.pendingVoteChoice || this.state?.myVote) return;
+    const now = Date.now();
+    if (this.lastVoteTapChoice === choice && now - this.lastVoteTapAt < 400) return;
+    this.lastVoteTapAt = now;
+    this.lastVoteTapChoice = choice;
+    this.pendingVoteChoice = choice;
+    this.render();
+    try {
+      await Socket.gameAction(this.roomId, 'vote', { choice });
+    } catch (e) {
+      this.pendingVoteChoice = null;
+      this.render();
       const el = document.getElementById('game-error');
       if (el) { el.textContent = e.message; el.style.display = 'block'; setTimeout(() => el.style.display = 'none', 3000); }
       else alert(e.message);

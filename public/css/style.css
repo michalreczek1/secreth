@@ -1146,52 +1146,75 @@ label { font-size: 12px; color: var(--text-dim); display: block; margin-bottom: 
   .loading-logo { letter-spacing: 3px; }
   .loading-tag { font-size: 10px; letter-spacing: 1px; }
   .site-header {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
     align-items: stretch;
     gap: 8px;
     padding: calc(8px + var(--safe-top)) calc(10px + var(--safe-right)) 8px calc(10px + var(--safe-left));
   }
   .site-logo {
     width: 100%;
+    grid-column: 1 / -1;
     font-size: 16px;
     letter-spacing: 2px;
   }
   .site-nav,
   .site-user {
-    gap: 6px;
-    align-items: center;
+    display: contents;
   }
   .site-nav > *,
-  .site-user > * { max-width: 100%; }
+  .site-user > * { max-width: none; }
   .status-pill {
-    width: auto;
+    width: 100%;
     margin-left: 0;
-    font-size: 10px !important;
-    padding: 4px 8px;
+    min-height: 44px;
+    font-size: 9px !important;
+    padding: 6px 4px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    line-height: 1.1;
   }
   .site-header .btn {
-    width: auto;
-    min-height: 36px;
-    padding: 6px 9px;
+    width: 100%;
+    min-height: 44px;
+    padding: 6px 4px;
     font-size: 10px;
   }
   #nav-room-actions {
+    display: contents;
     width: auto;
-    flex: 0 1 auto;
+    flex: none;
   }
   .modal-actions .btn {
     width: 100%;
     flex-basis: auto;
   }
   .header-btn {
-    gap: 4px;
+    flex-direction: column;
+    gap: 2px;
   }
+  .header-btn-emoji { font-size: 14px; }
   .header-btn-label {
-    font-size: 10px;
+    font-size: 9px;
+    line-height: 1.1;
   }
   .user-pill,
   .user-admin-pill {
-    font-size: 10px;
-    padding: 4px 8px;
+    width: 100%;
+    min-height: 44px;
+    font-size: 9px;
+    padding: 6px 4px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    line-height: 1.1;
+  }
+  .user-pill {
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
   .policy-boards { grid-template-columns: 1fr; }
   .auth-box { width: min(100%, 420px); padding: 24px 18px; }

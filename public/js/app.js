@@ -260,7 +260,6 @@ const App = {
 
   async logout() {
     await API.logout();
-    Socket.leaveRoom();
     Socket.disconnect();
     this.currentUser = null;
     Chat.closeMobileChat();

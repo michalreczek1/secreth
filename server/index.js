@@ -333,7 +333,15 @@ app.post('/api/login', async (req, res) => {
 });
 
 app.post('/api/logout', (req, res) => {
-  req.session.destroy(() => res.json({ ok: true }));
+  const userId = req.session?.userId;
+  (async () => {
+    if (userId) await forceLogoutUser(userId);
+    await destroySession(req);
+    res.json({ ok: true });
+  })().catch((e) => {
+    console.error('logout error', e);
+    res.status(500).json({ error: 'Błąd serwera' });
+  });
 });
 
 app.get('/api/me', async (req, res) => {
@@ -632,6 +640,7 @@ io.on('connection', async (socket) => {
             await persistActiveGameState(roomId);
           }
           addPlayerSocket(ag, userId, socket.id);
+          await reconcileEndVoteControl(roomId);
           broadcastGameState(roomId);
           await ensureDisconnectWorkflow(roomId);
         }
@@ -812,6 +821,12 @@ io.on('connection', async (socket) => {
           const remainingSockets = removePlayerSocket(ag, su.userId, socket.id);
           if (remainingSockets.length === 0) {
             p.connected = false;
+            const endVoteFinished = await reconcileEndVoteControl(su.roomId);
+            if (endVoteFinished) {
+              socketUsers.delete(socket.id);
+              console.log(`❌ ${username} rozłączony`);
+              return;
+            }
             await ensureDisconnectWorkflow(su.roomId);
           }
           await persistActiveGameState(su.roomId);
@@ -996,6 +1011,43 @@ async function requestEndGameVote(roomId, userId) {
   await persistActiveGameState(roomId);
   broadcastGameState(roomId);
   await emitSystemRoomMessage(roomId, `🛑 ${player.username} proponuje zakończenie gry. Potrzebna jest zgoda wszystkich ludzkich graczy.`);
+}
+
+async function reconcileEndVoteControl(roomId) {
+  const ag = activeGames.get(roomId);
+  if (!ag?.state) return false;
+  const state = ensureGameMetaState(ag.state);
+  const control = state.endVoteControl;
+  if (!control) return false;
+
+  const eligibleVoterIds = getEndVoteEligibleVoters(state);
+  const votes = Object.fromEntries(
+    Object.entries(control.votes || {}).filter(([userId, vote]) => eligibleVoterIds.includes(userId) && vote === 'yes')
+  );
+
+  state.endVoteControl = {
+    ...control,
+    eligibleVoterIds,
+    votes,
+  };
+  ag.state = state;
+
+  if (eligibleVoterIds.length === 0) {
+    state.endVoteControl = null;
+    await persistActiveGameState(roomId);
+    broadcastGameState(roomId);
+    return true;
+  }
+
+  const confirmedCount = Object.keys(votes).length;
+  if (confirmedCount >= eligibleVoterIds.length) {
+    await finishGameByConsensus(roomId, control.initiatedByUsername);
+    return true;
+  }
+
+  await persistActiveGameState(roomId);
+  broadcastGameState(roomId);
+  return false;
 }
 
 async function respondEndGameVote(roomId, userId, accept) {
@@ -1517,10 +1569,40 @@ async function leaveRoom(socket) {
   if (room && room.state === 'lobby') {
     await db.roomPlayers.remove(roomId, su.userId);
     await emitRoomPlayers(roomId);
+    su.roomId = null;
+    socketUsers.set(socket.id, su);
   }
   socket.leave(`room:${roomId}`);
-  su.roomId = null;
-  socketUsers.set(socket.id, su);
+}
+
+async function forceLogoutUser(userId) {
+  const socketIds = [...socketUsers.entries()]
+    .filter(([, su]) => su.userId === userId)
+    .map(([socketId]) => socketId);
+
+  for (const [roomId, ag] of activeGames.entries()) {
+    if (!ag?.state?.players) continue;
+    ensureGameMetaState(ag.state);
+    const player = ag.state.players.find((p) => p.id === userId);
+    if (!player) continue;
+
+    for (const socketId of socketIds) removePlayerSocket(ag, userId, socketId);
+
+    if (getPlayerSocketIds(ag, userId).length === 0 && player.connected !== false) {
+      player.connected = false;
+      const endVoteFinished = await reconcileEndVoteControl(roomId);
+      if (!endVoteFinished) {
+        await ensureDisconnectWorkflow(roomId);
+        await persistActiveGameState(roomId);
+        broadcastGameState(roomId);
+      }
+    }
+  }
+
+  for (const socketId of socketIds) {
+    const socket = io.sockets.sockets.get(socketId);
+    if (socket) socket.disconnect(true);
+  }
 }
 
 // ── START ─────────────────────────────────────────────────────────────────────

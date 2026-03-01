@@ -37,7 +37,7 @@ function ensureSocket() {
   sock = io({
     withCredentials: true,
     autoConnect: false,
-    transports: ['websocket'],
+    transports: ['polling', 'websocket'],
     timeout: 8000,
   });
 

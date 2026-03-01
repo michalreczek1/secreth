@@ -24,6 +24,14 @@ fs.mkdirSync(SESSION_DIR, { recursive: true });
 // ── MIDDLEWARE ────────────────────────────────────────────────────────────────
 app.use(express.json());
 app.use(express.static(path.join(__dirname, '..', 'public')));
+app.get('/healthz', (_req, res) => {
+  res.status(200).json({
+    ok: true,
+    service: 'secreth-online',
+    uptimeSeconds: Math.round(process.uptime()),
+    timestamp: new Date().toISOString(),
+  });
+});
 
 const sessionMiddleware = session({
   store: new FileStore({

@@ -95,7 +95,14 @@ const Socket = {
     }));
   },
 
-  leaveRoom() { sock?.emit('room:leave'); },
+  leaveRoom() {
+    return withSocketAck(() => new Promise((resolve, reject) => {
+      sock.emit('room:leave', (res) => {
+        if (res?.error) reject(new Error(res.error));
+        else resolve(res);
+      });
+    }));
+  },
 
   sendChat(message, roomId = null) { sock?.emit('chat:send', { message, roomId }); },
 

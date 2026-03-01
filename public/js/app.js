@@ -268,6 +268,19 @@ const App = {
     this.showAuth('login');
   },
 
+  async goLobby() {
+    if (this.currentView === 'room' && this.currentRoomId && this.currentRoomState !== 'playing') {
+      try {
+        await Socket.leaveRoom();
+      } catch (e) {
+        alert(e.message);
+        return;
+      }
+      this.clearActiveRoom();
+    }
+    await this.showLobby();
+  },
+
   // ── MAIN LAYOUT ───────────────────────────────────────────────────────────────
   showMainLayout() {
     document.getElementById('app').innerHTML = `
@@ -276,7 +289,7 @@ const App = {
         <header class="site-header">
           <div class="site-logo">SECRET HITLER</div>
           <nav class="site-nav">
-            <button class="btn btn-ghost btn-sm" onclick="App.showLobby()">🏠 Lobby</button>
+            <button class="btn btn-ghost btn-sm" onclick="App.goLobby()">🏠 Lobby</button>
             <span id="nav-room-actions"></span>
             ${this.currentUser?.isAdmin ? `<button class="btn btn-ghost btn-sm" onclick="App.showAdmin()">⚙️ Admin</button>` : ''}
           </nav>
@@ -459,7 +472,7 @@ const App = {
       return;
     }
     if (this.currentRoomId && this.currentRoomId !== roomId && this.currentRoomState !== 'playing') {
-      Socket.leaveRoom();
+      await Socket.leaveRoom();
       this.roomPlayers = [];
       Game.reset();
     }
@@ -506,7 +519,7 @@ const App = {
       el.innerHTML = `
         <div style="max-width:820px;margin:0 auto">
           <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px">
-            <button class="btn btn-ghost btn-sm" onclick="App.showLobby()">← Lobby</button>
+            <button class="btn btn-ghost btn-sm" onclick="App.goLobby()">← Lobby</button>
             <h2 class="font-title" style="font-size:16px;letter-spacing:2px;color:var(--gold)">${UI.escapeHtml(room.name)}</h2>
             <span class="room-state state-playing" style="font-size:10px">W GRZE</span>
           </div>
@@ -533,7 +546,7 @@ const App = {
     el.innerHTML = `
       <div style="max-width:600px;margin:0 auto">
         <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px">
-          <button class="btn btn-ghost btn-sm" onclick="App.showLobby()">← Lobby</button>
+          <button class="btn btn-ghost btn-sm" onclick="App.goLobby()">← Lobby</button>
           <h2 class="font-title" style="font-size:18px;letter-spacing:3px;color:var(--gold)">${UI.escapeHtml(room.name)}</h2>
           <span class="room-state state-lobby">LOBBY</span>
         </div>

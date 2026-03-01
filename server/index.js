@@ -664,7 +664,14 @@ io.on('connection', async (socket) => {
     }
   });
 
-  socket.on('room:leave', async () => { await leaveRoom(socket); });
+  socket.on('room:leave', async (callback) => {
+    try {
+      await leaveRoom(socket);
+      callback?.({ ok: true });
+    } catch (e) {
+      callback?.({ error: e.message || 'Błąd opuszczania pokoju' });
+    }
+  });
 
   // ── CZAT ────────────────────────────────────────────────────────────────────
   socket.on('chat:send', async ({ message, roomId: targetRoom }) => {

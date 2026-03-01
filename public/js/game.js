@@ -1034,7 +1034,7 @@ const Game = {
       actions: `
         <button class="btn btn-ghost" style="flex:1" onclick="UI.closeModal()">Później</button>
         <button class="btn btn-gold" id="claim-confirm-btn" style="flex:1" ${this.selectedClaimSummary ? '' : 'disabled'} onclick="Game.declareClaim('${claim.sessionId}', Game.selectedClaimSummary, false)">Zatwierdź</button>
-        <button class="btn btn-red" style="flex:1" onclick="Game.declareClaim('${claim.sessionId}', '', true)">Pomiń deklarację</button>
+        <button class="btn btn-red" style="flex:1" onclick="Game.declareClaim('${claim.sessionId}', '', true)">Pomiń</button>
       `,
     });
   },

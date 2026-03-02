@@ -465,10 +465,37 @@ function isGamePauseActive(state) {
   return isDisconnectPauseActive(state) || isEndVoteActive(state);
 }
 
+function hasPendingHumanClaim(roomId) {
+  const ag = activeGames.get(roomId);
+  const state = ag?.state;
+  if (!state?.players) return false;
+  const automated = getAutomatedPlayerIds(roomId);
+  const sessions = Array.isArray(state.claimSessions) ? state.claimSessions : [];
+
+  return sessions.some((session) => {
+    const president = state.players.find((player) => player.id === session.presidentId);
+    if (session.presidentReady && !session.presidentSubmitted && president && !automated.has(session.presidentId) && president.connected !== false) {
+      return true;
+    }
+
+    const chancellor = state.players.find((player) => player.id === session.chancellorId);
+    if (session.chancellorReady && !session.chancellorSubmitted && chancellor && !automated.has(session.chancellorId) && chancellor.connected !== false) {
+      return true;
+    }
+
+    return false;
+  });
+}
+
 function shouldBotsPlay(roomId) {
   const ag = activeGames.get(roomId);
   const bots = getAutomatedPlayerIds(roomId);
-  return bots.size > 0 && !!ag && ag.state.phase !== 'end' && !isGamePauseActive(ag.state) && hasConnectedHumanInGame(roomId);
+  return bots.size > 0
+    && !!ag
+    && ag.state.phase !== 'end'
+    && !isGamePauseActive(ag.state)
+    && !hasPendingHumanClaim(roomId)
+    && hasConnectedHumanInGame(roomId);
 }
 
 function pickBotName(existingNames) {

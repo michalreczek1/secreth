@@ -54,6 +54,8 @@ function ensureSocket() {
   });
   sock.on('rooms:updated', () => App.onRoomsUpdated?.());
   sock.on('room:players', (players) => App.onRoomPlayers?.(players));
+  sock.on('room:startConfirmation', (control) => App.onRoomStartConfirmation?.(control));
+  sock.on('room:removed', (payload) => App.onRoomRemoved?.(payload));
   sock.on('room:deleted', () => App.onRoomDeleted?.());
   sock.on('chat:message', (msg) => Chat.onMessage?.(msg));
   sock.on('chat:history', (msgs) => Chat.onHistory?.(msgs));
@@ -111,6 +113,15 @@ const Socket = {
   startGame(roomId) {
     return withSocketAck(() => new Promise((resolve, reject) => {
       sock.emit('game:start', roomId, (res) => {
+        if (res?.error) reject(new Error(res.error));
+        else resolve(res);
+      });
+    }));
+  },
+
+  confirmRoomStart(roomId) {
+    return withSocketAck(() => new Promise((resolve, reject) => {
+      sock.emit('room:startConfirm', roomId, (res) => {
         if (res?.error) reject(new Error(res.error));
         else resolve(res);
       });

@@ -62,10 +62,13 @@ const roomBots     = new Map();
 const roomBotTimers = new Map();
 // roomId → timeout
 const roomDisconnectTimers = new Map();
+// roomId -> start confirmation control
+const roomStartConfirmations = new Map();
 
 const DISCONNECT_GRACE_MS = 90 * 1000;
 const DISCONNECT_WAIT_EXTENSION_MS = 60 * 1000;
 const DISCONNECT_CHOICES = new Set(['wait', 'takeover', 'end']);
+const ROOM_START_CONFIRM_MS = 90 * 1000;
 const SYSTEM_USER_ID = '__system__';
 const LOGIN_WINDOW_MS = 10 * 60 * 1000;
 const LOGIN_LOCK_MS = 15 * 60 * 1000;
@@ -231,6 +234,163 @@ function clearRoomBotsMeta(roomId) {
   clearBotTimer(roomId);
   clearDisconnectTimer(roomId);
   roomBots.delete(roomId);
+}
+
+function clearRoomStartConfirmation(roomId, { emit = true } = {}) {
+  const control = roomStartConfirmations.get(roomId);
+  if (control?.timer) clearTimeout(control.timer);
+  roomStartConfirmations.delete(roomId);
+  if (emit) io.to(`room:${roomId}`).emit('room:startConfirmation', null);
+}
+
+function serializeRoomStartConfirmation(control) {
+  if (!control) return null;
+  return {
+    roomId: control.roomId,
+    requestedBy: control.requestedBy,
+    requestedByName: control.requestedByName,
+    expiresAt: control.expiresAt,
+    participants: control.participants.map((participant) => ({
+      userId: participant.userId,
+      username: participant.username,
+      confirmed: !!participant.confirmedAt,
+      confirmedAt: participant.confirmedAt || null,
+    })),
+  };
+}
+
+function emitRoomStartConfirmation(roomId) {
+  io.to(`room:${roomId}`).emit('room:startConfirmation', serializeRoomStartConfirmation(roomStartConfirmations.get(roomId)));
+}
+
+async function removeUserFromLobbyRoom(roomId, userId, reason = null) {
+  await db.roomPlayers.remove(roomId, userId);
+  for (const [socketId, su] of socketUsers.entries()) {
+    if (su.userId !== userId || su.roomId !== roomId) continue;
+    const socket = io.sockets.sockets.get(socketId);
+    socket?.leave(`room:${roomId}`);
+    su.roomId = null;
+    socketUsers.set(socketId, su);
+    if (reason) io.to(socketId).emit('room:removed', { roomId, message: reason });
+  }
+}
+
+async function startGameForRoom(roomId, initiatedByUsername = 'System') {
+  const room = await db.rooms.findById(roomId);
+  if (!room) throw new Error('Pokój nie istnieje');
+  if (room.state === 'playing') throw new Error('Gra już trwa');
+
+  const players = await db.roomPlayers.getPlayersInRoom(roomId);
+  if (players.length < 5) throw new Error(`Za mało graczy (${players.length}/5)`);
+  if (players.length > 10) throw new Error('Za dużo graczy (max 10)');
+
+  clearRoomStartConfirmation(roomId);
+
+  const playerList = players.map((p) => ({ id: p.userId, username: p.username }));
+  const state = ensureGameMetaState(game.createGame(playerList));
+
+  const ag = { state, playerSockets: {} };
+  for (const [sid, su] of socketUsers.entries()) {
+    if (su.roomId === roomId) addPlayerSocket(ag, su.userId, sid);
+  }
+  activeGames.set(roomId, ag);
+  await db.rooms.setState(roomId, 'playing', JSON.stringify(state));
+
+  io.to(`room:${roomId}`).emit('game:started');
+  broadcastGameState(roomId);
+  io.emit('rooms:updated');
+
+  await db.messages.insert(
+    roomId,
+    SYSTEM_USER_ID,
+    'System',
+    `🎮 Gra rozpoczęta! Grają: ${playerList.map((p) => p.username).join(', ')}. Start zainicjował: ${initiatedByUsername}.`,
+    'system'
+  );
+  io.to(`room:${roomId}`).emit('chat:message', {
+    username: 'System',
+    message: `🎮 Gra rozpoczęta! ${players.length} graczy.`,
+    createdAt: new Date().toISOString(),
+    type: 'system',
+    roomId,
+  });
+
+  if (shouldBotsPlay(roomId)) scheduleBots(roomId, 900);
+}
+
+async function syncRoomStartConfirmation(roomId) {
+  const control = roomStartConfirmations.get(roomId);
+  if (!control) return null;
+
+  const room = await db.rooms.findById(roomId);
+  if (!room || room.state !== 'lobby') {
+    clearRoomStartConfirmation(roomId);
+    return null;
+  }
+
+  const players = await db.roomPlayers.getPlayersInRoom(roomId);
+  const humanPlayers = players.filter((player) => !isBotId(player.userId));
+  const playerMap = new Map(humanPlayers.map((player) => [player.userId, player]));
+
+  control.participants = control.participants
+    .filter((participant) => playerMap.has(participant.userId))
+    .map((participant) => ({
+      ...participant,
+      username: playerMap.get(participant.userId)?.username || participant.username,
+    }));
+
+  if (control.participants.length < 5) {
+    clearRoomStartConfirmation(roomId);
+    return null;
+  }
+
+  return control;
+}
+
+async function maybeCompleteRoomStartConfirmation(roomId) {
+  const control = await syncRoomStartConfirmation(roomId);
+  if (!control) return false;
+  if (!control.participants.every((participant) => participant.confirmedAt)) {
+    emitRoomStartConfirmation(roomId);
+    return false;
+  }
+  await startGameForRoom(roomId, control.requestedByName);
+  return true;
+}
+
+async function finalizeRoomStartConfirmation(roomId) {
+  const control = await syncRoomStartConfirmation(roomId);
+  if (!control) return;
+
+  const unconfirmed = control.participants.filter((participant) => !participant.confirmedAt);
+  for (const participant of unconfirmed) {
+    await removeUserFromLobbyRoom(
+      roomId,
+      participant.userId,
+      'Nie potwierdziłeś startu gry na czas i zostałeś usunięty z pokoju.'
+    );
+  }
+
+  const removedNames = unconfirmed.map((participant) => participant.username);
+  control.participants = control.participants.filter((participant) => participant.confirmedAt);
+
+  const updatedPlayers = await emitRoomPlayers(roomId);
+  if (removedNames.length) {
+    await emitSystemRoomMessage(
+      roomId,
+      `⌛ Z pokoju usunięto niepotwierdzonych graczy: ${removedNames.join(', ')}.`
+    );
+  }
+
+  if (control.participants.length >= 5) {
+    await startGameForRoom(roomId, control.requestedByName);
+    return;
+  }
+
+  clearRoomStartConfirmation(roomId);
+  if (updatedPlayers.length < 5) {
+    await emitSystemRoomMessage(roomId, '❌ Start anulowany. Po usunięciu niepotwierdzonych graczy zostało mniej niż 5 osób.');
+  }
 }
 
 function hasConnectedHumanInGame(roomId) {
@@ -559,6 +719,7 @@ app.delete('/api/rooms/:id', requireAuth, async (req, res) => {
     if (!room) return res.status(404).json({ error: 'Pokój nie istnieje' });
     if (room.ownerId !== req.session.userId && !req.session.isAdmin)
       return res.status(403).json({ error: 'Brak uprawnień' });
+    clearRoomStartConfirmation(req.params.id);
     await db.rooms.delete(req.params.id);
     await db.roomPlayers.removeAll(req.params.id);
     activeGames.delete(req.params.id);
@@ -576,6 +737,7 @@ app.post('/api/rooms/:id/bots', requireAuth, async (req, res) => {
     const room = await db.rooms.findById(req.params.id);
     if (!room) return res.status(404).json({ error: 'Pokój nie istnieje' });
     if (room.state !== 'lobby') return res.status(400).json({ error: 'Boty można dodawać tylko w lobby' });
+    if (roomStartConfirmations.has(req.params.id)) return res.status(400).json({ error: 'Trwa potwierdzanie startu gry' });
     if (room.ownerId !== req.session.userId && !req.session.isAdmin)
       return res.status(403).json({ error: 'Brak uprawnień' });
 
@@ -612,6 +774,7 @@ app.delete('/api/rooms/:id/bots', requireAuth, async (req, res) => {
     const room = await db.rooms.findById(req.params.id);
     if (!room) return res.status(404).json({ error: 'Pokój nie istnieje' });
     if (room.state !== 'lobby') return res.status(400).json({ error: 'Boty można usuwać tylko w lobby' });
+    if (roomStartConfirmations.has(req.params.id)) return res.status(400).json({ error: 'Trwa potwierdzanie startu gry' });
     if (room.ownerId !== req.session.userId && !req.session.isAdmin)
       return res.status(403).json({ error: 'Brak uprawnień' });
 
@@ -687,6 +850,7 @@ io.on('connection', async (socket) => {
         }
         await db.roomPlayers.remove(membership.roomId, userId);
         await emitRoomPlayers(membership.roomId);
+        if (!(await maybeCompleteRoomStartConfirmation(membership.roomId))) emitRoomStartConfirmation(membership.roomId);
         socket.leave(`room:${membership.roomId}`);
       }
 
@@ -695,6 +859,7 @@ io.on('connection', async (socket) => {
 
       if (!inRoom) {
         if (room.state === 'playing') return callback?.({ error: 'Gra już trwa — nie możesz dołączyć' });
+        if (roomStartConfirmations.has(roomId)) return callback?.({ error: 'Trwa potwierdzanie startu gry. Poczekaj na koniec odliczania.' });
         if (players.length >= 10)   return callback?.({ error: 'Pokój pełny (max 10)' });
         await db.roomPlayers.add(roomId, userId, username);
       }
@@ -738,6 +903,7 @@ io.on('connection', async (socket) => {
       }
 
       const updatedPlayers = await emitRoomPlayers(roomId);
+      emitRoomStartConfirmation(roomId);
       if (shouldBotsPlay(roomId)) scheduleBots(roomId, 700);
 
       // Historia czatu pokoju
@@ -801,41 +967,73 @@ io.on('connection', async (socket) => {
       if (!(await ensureSocketUserActive(callback))) return;
       const room = await db.rooms.findById(roomId);
       if (!room) return callback?.({ error: 'Pokój nie istnieje' });
-      if (room.ownerId !== userId) return callback?.({ error: 'Tylko właściciel może zacząć' });
       if (room.state === 'playing') return callback?.({ error: 'Gra już trwa' });
+      const membership = await db.roomPlayers.isInRoom(roomId, userId);
+      if (!membership) return callback?.({ error: 'Nie jesteś w tym pokoju' });
+      if (isBotId(userId)) return callback?.({ error: 'Bot nie może rozpocząć gry' });
 
       const players = await db.roomPlayers.getPlayersInRoom(roomId);
       if (players.length < 5)  return callback?.({ error: `Za mało graczy (${players.length}/5)` });
       if (players.length > 10) return callback?.({ error: 'Za dużo graczy (max 10)' });
-
-      const playerList = players.map(p => ({ id: p.userId, username: p.username }));
-      const state = ensureGameMetaState(game.createGame(playerList));
-
-      const ag = { state, playerSockets: {} };
-      for (const [sid, su] of socketUsers.entries()) {
-        if (su.roomId === roomId) addPlayerSocket(ag, su.userId, sid);
+      const hasBots = players.some((player) => isBotId(player.userId));
+      if (hasBots) {
+        await startGameForRoom(roomId, username);
+        return callback?.({ ok: true, started: true });
       }
-      activeGames.set(roomId, ag);
-      await db.rooms.setState(roomId, 'playing', JSON.stringify(state));
 
-      io.to(`room:${roomId}`).emit('game:started');
-      broadcastGameState(roomId);
-      io.emit('rooms:updated');
+      let control = roomStartConfirmations.get(roomId);
+      if (!control) {
+        control = {
+          roomId,
+          requestedBy: userId,
+          requestedByName: username,
+          expiresAt: new Date(Date.now() + ROOM_START_CONFIRM_MS).toISOString(),
+          participants: players
+            .filter((player) => !isBotId(player.userId))
+            .map((player) => ({
+              userId: player.userId,
+              username: player.username,
+              confirmedAt: player.userId === userId ? new Date().toISOString() : null,
+            })),
+          timer: null,
+        };
+        control.timer = setTimeout(() => {
+          finalizeRoomStartConfirmation(roomId).catch((e) => console.error('room:start finalize error', e));
+        }, ROOM_START_CONFIRM_MS);
+        roomStartConfirmations.set(roomId, control);
+        await emitSystemRoomMessage(roomId, `🗳️ ${username} chce rozpocząć grę. Wszyscy gracze muszą potwierdzić start w ciągu 90 sekund.`);
+      } else {
+        const participant = control.participants.find((entry) => entry.userId === userId);
+        if (participant && !participant.confirmedAt) {
+          participant.confirmedAt = new Date().toISOString();
+        }
+      }
 
-      await db.messages.insert(roomId, SYSTEM_USER_ID, 'System',
-        `🎮 Gra rozpoczęta! Grają: ${playerList.map(p => p.username).join(', ')}`, 'system');
-      io.to(`room:${roomId}`).emit('chat:message', {
-        username: 'System',
-        message: `🎮 Gra rozpoczęta! ${players.length} graczy.`,
-        createdAt: new Date().toISOString(), type: 'system', roomId,
-      });
-
-      if (shouldBotsPlay(roomId)) scheduleBots(roomId, 900);
-
-      callback?.({ ok: true });
+      const started = await maybeCompleteRoomStartConfirmation(roomId);
+      if (!started) emitRoomStartConfirmation(roomId);
+      callback?.({ ok: true, pending: !started, started });
     } catch (e) {
       console.error('game:start error', e);
       callback?.({ error: e.message });
+    }
+  });
+
+  socket.on('room:startConfirm', async (roomId, callback) => {
+    try {
+      if (!(await ensureSocketUserActive(callback))) return;
+      const control = roomStartConfirmations.get(roomId);
+      if (!control) return callback?.({ error: 'Brak aktywnego potwierdzenia startu' });
+      const participant = control.participants.find((entry) => entry.userId === userId);
+      if (!participant) return callback?.({ error: 'Nie bierzesz udziału w tym starcie' });
+      if (!participant.confirmedAt) {
+        participant.confirmedAt = new Date().toISOString();
+        await emitSystemRoomMessage(roomId, `✅ ${username} potwierdza gotowość do startu gry.`);
+      }
+      const started = await maybeCompleteRoomStartConfirmation(roomId);
+      if (!started) emitRoomStartConfirmation(roomId);
+      callback?.({ ok: true, started });
+    } catch (e) {
+      callback?.({ error: e.message || 'Błąd potwierdzania startu' });
     }
   });
 
@@ -892,6 +1090,7 @@ io.on('connection', async (socket) => {
       activeGames.delete(roomId);
       clearBotTimer(roomId);
       clearDisconnectTimer(roomId);
+      clearRoomStartConfirmation(roomId);
       await db.rooms.setState(roomId, 'lobby', null);
       io.to(`room:${roomId}`).emit('game:reset');
       io.emit('rooms:updated');
@@ -909,6 +1108,7 @@ io.on('connection', async (socket) => {
       if (room && room.state === 'lobby') {
         await db.roomPlayers.remove(su.roomId, su.userId);
         await emitRoomPlayers(su.roomId);
+        if (!(await maybeCompleteRoomStartConfirmation(su.roomId))) emitRoomStartConfirmation(su.roomId);
       }
 
       const ag = activeGames.get(su.roomId);
@@ -1667,6 +1867,7 @@ async function leaveRoom(socket) {
   if (room && room.state === 'lobby') {
     await db.roomPlayers.remove(roomId, su.userId);
     await emitRoomPlayers(roomId);
+    if (!(await maybeCompleteRoomStartConfirmation(roomId))) emitRoomStartConfirmation(roomId);
     su.roomId = null;
     socketUsers.set(socket.id, su);
   }

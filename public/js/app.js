@@ -9,6 +9,8 @@ const App = {
   currentRoomState: null,
   currentRoomPlayerCount: 0,
   roomPlayers: [],
+  roomStartConfirmation: null,
+  roomStartTicker: null,
   rooms: [],
   deferredInstallPrompt: null,
   pwaSetupDone: false,
@@ -46,8 +48,37 @@ const App = {
   clearActiveRoom() {
     this.setActiveRoom(null);
     this.roomPlayers = [];
+    this.setRoomStartConfirmation(null);
     Chat.setRoom(null);
     Game.reset();
+  },
+
+  setRoomStartConfirmation(control) {
+    this.roomStartConfirmation = control || null;
+    if (this.roomStartTicker) {
+      clearInterval(this.roomStartTicker);
+      this.roomStartTicker = null;
+    }
+    if (this.roomStartConfirmation?.expiresAt) {
+      this.roomStartTicker = setInterval(() => this.updateRoomStartCountdown(), 1000);
+    }
+    this.renderRoomStartPanel();
+    this.updateRoomStartCountdown();
+  },
+
+  formatRoomStartCountdown(expiresAt) {
+    const ms = new Date(expiresAt).getTime() - Date.now();
+    if (!Number.isFinite(ms) || ms <= 0) return '0s';
+    const totalSeconds = Math.ceil(ms / 1000);
+    const mins = Math.floor(totalSeconds / 60);
+    const secs = totalSeconds % 60;
+    return mins > 0 ? `${mins}m ${String(secs).padStart(2, '0')}s` : `${secs}s`;
+  },
+
+  updateRoomStartCountdown() {
+    const el = document.getElementById('room-start-countdown');
+    if (!el || !this.roomStartConfirmation?.expiresAt) return;
+    el.textContent = this.formatRoomStartCountdown(this.roomStartConfirmation.expiresAt);
   },
 
   setupPwa() {
@@ -177,7 +208,19 @@ const App = {
   onRoomPlayers(players) {
     this.roomPlayers = Array.isArray(players) ? players : [];
     this.currentRoomPlayerCount = this.roomPlayers.length;
-    if (this.currentView === 'room') this.renderRoomPlayers(this.roomPlayers);
+    if (this.currentView === 'room') {
+      this.renderRoomPlayers(this.roomPlayers);
+      this.renderRoomStartPanel();
+    }
+  },
+  onRoomStartConfirmation(control) {
+    this.setRoomStartConfirmation(control);
+  },
+  onRoomRemoved(payload) {
+    if (!payload || payload.roomId !== this.currentRoomId) return;
+    this.clearActiveRoom();
+    this.showLobby();
+    alert(payload.message || 'Zostałeś usunięty z pokoju.');
   },
   onRoomDeleted() {
     this.clearActiveRoom();
@@ -186,11 +229,13 @@ const App = {
   },
   onGameStarted() {
     this.currentRoomState = 'playing';
+    this.setRoomStartConfirmation(null);
     this.updateHeaderRoomAction();
     if (this.currentRoomId) this.showRoom(this.currentRoomId);
   },
   onGameReset() {
     this.currentRoomState = 'lobby';
+    this.setRoomStartConfirmation(null);
     Game.reset();
     this.updateHeaderRoomAction();
     this.showRoom(this.currentRoomId, true);
@@ -368,6 +413,7 @@ const App = {
     this.currentView = 'lobby';
     Chat.setRoom(null);
     Game.reset();
+    this.setRoomStartConfirmation(null);
 
     const el = document.getElementById('panel-main');
     if (!el) return;
@@ -496,6 +542,7 @@ const App = {
     if (this.currentRoomId && this.currentRoomId !== roomId && this.currentRoomState !== 'playing') {
       await Socket.leaveRoom();
       this.roomPlayers = [];
+      this.setRoomStartConfirmation(null);
       Game.reset();
     }
     if (!skipSocket) {
@@ -557,12 +604,11 @@ const App = {
     Game.reset();
 
     // Lobby view
-    const isOwner = room.ownerId === this.currentUser.id;
     this.currentRoomPlayerCount = typeof room.playerCount === 'number' ? room.playerCount : this.currentRoomPlayerCount;
     const players = await this.getRoomPlayers(roomId);
     const effectiveCount = this.getEffectiveRoomPlayerCount(players);
     const botCount = players.filter(p => typeof p.id === 'string' && p.id.startsWith('bot:')).length;
-    const canStart = isOwner && effectiveCount >= 5 && effectiveCount <= 10;
+    const isOwner = room.ownerId === this.currentUser.id;
     const canManageBots = room.state === 'lobby' && (isOwner || this.currentUser?.isAdmin);
 
     el.innerHTML = `
@@ -581,19 +627,10 @@ const App = {
           </div>
         </div>
 
-        ${isOwner ? `
-          <div class="box" style="margin-top:12px">
-            <div class="section-title">Kontrola (Właściciel)</div>
-            <div id="room-owner-warning" class="notice notice-warn" style="${canStart ? 'display:none' : ''}">Potrzeba min. 5 graczy. Aktualnie: ${effectiveCount}</div>
-            <button id="room-start-btn" class="btn btn-gold btn-full" ${!canStart ? 'disabled' : ''} onclick="App.startGame()">
-              🎮 Rozpocznij Grę
-            </button>
-          </div>
-        ` : `
-          <div class="notice notice-info" style="margin-top:12px">
-            Czekaj na właściciela pokoju (<strong>${UI.escapeHtml(room.ownerName)}</strong>) który rozpocznie grę.
-          </div>
-        `}
+        <div class="box" style="margin-top:12px">
+          <div class="section-title">Start Gry</div>
+          <div id="room-start-panel"></div>
+        </div>
 
         ${canManageBots ? `
           <div class="box" style="margin-top:12px">
@@ -620,6 +657,7 @@ const App = {
     `;
 
     this.renderRoomPlayers(players);
+    this.renderRoomStartPanel();
   },
 
   async getRoomPlayers(roomId) {
@@ -658,16 +696,6 @@ const App = {
     if (el) el.innerHTML = rows || '<div class="text-dim italic" style="font-size:13px">Brak graczy</div>';
     if (sideEl) sideEl.innerHTML = rows || '<div class="text-dim italic" style="font-size:12px;padding:8px">Brak graczy</div>';
 
-    const startBtn = document.getElementById('room-start-btn');
-    if (startBtn) startBtn.disabled = effectiveCount < 5 || effectiveCount > 10;
-
-    const ownerWarning = document.getElementById('room-owner-warning');
-    if (ownerWarning) {
-      const shouldWarn = effectiveCount < 5 || effectiveCount > 10;
-      ownerWarning.style.display = shouldWarn ? '' : 'none';
-      ownerWarning.textContent = `Potrzeba min. 5 graczy. Aktualnie: ${effectiveCount}`;
-    }
-
     const botCount = hasActualPlayers
       ? players.filter(p => typeof p.id === 'string' && p.id.startsWith('bot:')).length
       : null;
@@ -684,10 +712,74 @@ const App = {
     if (removeBotsBtn) removeBotsBtn.disabled = botCount == null ? true : botCount === 0;
   },
 
+  renderRoomStartPanel() {
+    const panel = document.getElementById('room-start-panel');
+    if (!panel || this.currentView !== 'room' || !this.currentRoomId || this.currentRoomState === 'playing') return;
+
+    const players = Array.isArray(this.roomPlayers) ? this.roomPlayers : [];
+    const effectiveCount = this.getEffectiveRoomPlayerCount(players);
+    const hasActualPlayers = players.length > 0;
+    const botCount = hasActualPlayers ? players.filter((player) => typeof player.id === 'string' && player.id.startsWith('bot:')).length : 0;
+    const hasBots = botCount > 0;
+    const canStart = effectiveCount >= 5 && effectiveCount <= 10;
+    const control = this.roomStartConfirmation;
+
+    if (control) {
+      const myEntry = control.participants.find((participant) => participant.userId === this.currentUser.id);
+      const confirmedCount = control.participants.filter((participant) => participant.confirmed).length;
+      const rows = control.participants.map((participant) => `
+        <div class="player-item" style="padding:6px 10px">
+          <div class="player-dot ${participant.confirmed ? 'online' : ''}"></div>
+          <span class="player-name">${UI.escapeHtml(participant.username)}${participant.userId === this.currentUser.id ? ' (ty)' : ''}</span>
+          <span class="status-pill" style="margin-left:auto;font-size:11px;color:${participant.confirmed ? '#4a8' : 'var(--muted)'}">${participant.confirmed ? 'Potwierdzone' : 'Czeka'}</span>
+        </div>
+      `).join('');
+
+      panel.innerHTML = `
+        <div class="notice notice-info" style="margin-bottom:10px">
+          <strong>${UI.escapeHtml(control.requestedByName)}</strong> chce rozpocząć grę. Potwierdź w ciągu <strong id="room-start-countdown">${this.formatRoomStartCountdown(control.expiresAt)}</strong>.
+          Niepotwierdzeni gracze zostaną usunięci z pokoju.
+        </div>
+        <div class="text-dim" style="font-size:12px;margin-bottom:10px">Potwierdzenia: <strong>${confirmedCount}/${control.participants.length}</strong></div>
+        <div class="box" style="padding:0;margin-bottom:12px">${rows}</div>
+        ${myEntry?.confirmed ? `
+          <div class="notice notice-success">Potwierdziłeś gotowość. Czekamy na pozostałych graczy.</div>
+        ` : `
+          <button class="btn btn-gold btn-full" onclick="App.confirmStartGame()">✅ Potwierdzam Start</button>
+        `}
+      `;
+      return;
+    }
+
+    panel.innerHTML = `
+      <div class="text-dim" style="font-size:12px;margin-bottom:10px">
+        ${hasBots
+          ? 'W pokoju są boty. Start jest natychmiastowy po kliknięciu przez dowolnego gracza.'
+          : 'Po kliknięciu wszyscy zalogowani gracze w pokoju muszą potwierdzić start w ciągu 90 sekund.'}
+      </div>
+      <div class="notice notice-warn" style="${canStart ? 'display:none' : 'margin-bottom:10px'}">
+        Potrzeba min. 5 graczy. Aktualnie: ${effectiveCount}
+      </div>
+      <button id="room-start-btn" class="btn btn-gold btn-full" ${!canStart ? 'disabled' : ''} onclick="App.startGame()">
+        🎮 Rozpocznij Grę
+      </button>
+    `;
+  },
+
   async startGame() {
     try {
-      await Socket.startGame(this.currentRoomId);
-      await this.showRoom(this.currentRoomId);
+      const res = await Socket.startGame(this.currentRoomId);
+      if (res?.started) return;
+      if (res?.pending) this.renderRoomStartPanel();
+    } catch (e) {
+      alert(e.message);
+    }
+  },
+
+  async confirmStartGame() {
+    try {
+      await Socket.confirmRoomStart(this.currentRoomId);
+      this.renderRoomStartPanel();
     } catch (e) {
       alert(e.message);
     }

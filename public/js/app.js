@@ -11,6 +11,7 @@ const App = {
   roomPlayers: [],
   roomStartConfirmation: null,
   roomStartTicker: null,
+  roomStartModalKey: null,
   rooms: [],
   deferredInstallPrompt: null,
   pwaSetupDone: false,
@@ -48,6 +49,7 @@ const App = {
   clearActiveRoom() {
     this.setActiveRoom(null);
     this.roomPlayers = [];
+    this.roomStartModalKey = null;
     this.setRoomStartConfirmation(null);
     Chat.setRoom(null);
     Game.reset();
@@ -64,6 +66,7 @@ const App = {
     }
     this.renderRoomStartPanel();
     this.updateRoomStartCountdown();
+    this.maybePromptRoomStartConfirmation();
   },
 
   formatRoomStartCountdown(expiresAt) {
@@ -77,8 +80,72 @@ const App = {
 
   updateRoomStartCountdown() {
     const el = document.getElementById('room-start-countdown');
-    if (!el || !this.roomStartConfirmation?.expiresAt) return;
-    el.textContent = this.formatRoomStartCountdown(this.roomStartConfirmation.expiresAt);
+    const modalEl = document.getElementById('room-start-modal-countdown');
+    if (!this.roomStartConfirmation?.expiresAt) return;
+    const text = this.formatRoomStartCountdown(this.roomStartConfirmation.expiresAt);
+    if (el) el.textContent = text;
+    if (modalEl) modalEl.textContent = text;
+  },
+
+  getRoomStartModalKey(control = this.roomStartConfirmation) {
+    if (!control?.roomId || !control?.expiresAt) return null;
+    return `${control.roomId}:${control.expiresAt}`;
+  },
+
+  maybePromptRoomStartConfirmation() {
+    const control = this.roomStartConfirmation;
+    if (!control || this.currentView !== 'room' || this.currentRoomState === 'playing') return;
+    const participant = control.participants.find((entry) => entry.userId === this.currentUser?.id);
+    if (!participant) return;
+
+    const modalKey = this.getRoomStartModalKey(control);
+    const hasOpenModal = !!document.getElementById('modal-overlay');
+    if (!participant.confirmed && modalKey && this.roomStartModalKey !== modalKey && !hasOpenModal) {
+      this.roomStartModalKey = modalKey;
+      this.showRoomStartConfirmationModal();
+      return;
+    }
+
+    if (participant.confirmed && document.getElementById('room-start-confirm-btn')) {
+      this.showRoomStartConfirmationModal();
+    }
+  },
+
+  showRoomStartConfirmationModal() {
+    const control = this.roomStartConfirmation;
+    if (!control) return;
+    const participant = control.participants.find((entry) => entry.userId === this.currentUser?.id);
+    if (!participant) return;
+
+    const confirmedCount = control.participants.filter((entry) => entry.confirmed).length;
+    const rows = control.participants.map((entry) => `
+      <div class="player-item" style="padding:6px 10px">
+        <div class="player-dot ${entry.confirmed ? 'online' : ''}"></div>
+        <span class="player-name">${UI.escapeHtml(entry.username)}${entry.userId === this.currentUser.id ? ' (ty)' : ''}</span>
+        <span class="status-pill" style="margin-left:auto;font-size:11px;color:${entry.confirmed ? '#4a8' : 'var(--muted)'}">${entry.confirmed ? 'Potwierdzone' : 'Czeka'}</span>
+      </div>
+    `).join('');
+
+    UI.showModal({
+      title: '🗳️ Potwierdzenie Startu Gry',
+      content: `
+        <div style="display:flex;flex-direction:column;gap:12px">
+          <div class="notice notice-info">
+            <strong>${UI.escapeHtml(control.requestedByName)}</strong> chce rozpocząć grę.
+            Czas na odpowiedź: <strong id="room-start-modal-countdown">${this.formatRoomStartCountdown(control.expiresAt)}</strong>
+          </div>
+          <div class="text-dim" style="font-size:12px">Potwierdzenia: <strong>${confirmedCount}/${control.participants.length}</strong></div>
+          <div class="box" style="padding:0">${rows}</div>
+          <div class="text-dim" style="font-size:12px">Brak potwierdzenia w czasie usuwa gracza z pokoju.</div>
+        </div>
+      `,
+      actions: participant.confirmed
+        ? `<button class="btn btn-ghost btn-full" onclick="UI.closeModal()">Zamknij</button>`
+        : `
+          <button class="btn btn-gold" id="room-start-confirm-btn" style="flex:1" onclick="App.confirmStartGame(true)">Potwierdzam</button>
+          <button class="btn btn-ghost" style="flex:1" onclick="UI.closeModal()">Później</button>
+        `,
+    });
   },
 
   setupPwa() {
@@ -229,12 +296,14 @@ const App = {
   },
   onGameStarted() {
     this.currentRoomState = 'playing';
+    this.roomStartModalKey = null;
     this.setRoomStartConfirmation(null);
     this.updateHeaderRoomAction();
     if (this.currentRoomId) this.showRoom(this.currentRoomId);
   },
   onGameReset() {
     this.currentRoomState = 'lobby';
+    this.roomStartModalKey = null;
     this.setRoomStartConfirmation(null);
     Game.reset();
     this.updateHeaderRoomAction();
@@ -776,9 +845,10 @@ const App = {
     }
   },
 
-  async confirmStartGame() {
+  async confirmStartGame(closeModal = false) {
     try {
       await Socket.confirmRoomStart(this.currentRoomId);
+      if (closeModal) UI.closeModal();
       this.renderRoomStartPanel();
     } catch (e) {
       alert(e.message);

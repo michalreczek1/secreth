@@ -382,15 +382,13 @@ async function finalizeRoomStartConfirmation(roomId) {
     );
   }
 
-  if (control.participants.length >= 5) {
-    await startGameForRoom(roomId, control.requestedByName);
+  clearRoomStartConfirmation(roomId);
+  if (updatedPlayers.length >= 5) {
+    await emitSystemRoomMessage(roomId, '⏹️ Start nie został uruchomiony automatycznie po timeoutcie. Jeśli chcecie grać w nowym składzie, kliknijcie ponownie „Rozpocznij Grę”.');
     return;
   }
 
-  clearRoomStartConfirmation(roomId);
-  if (updatedPlayers.length < 5) {
-    await emitSystemRoomMessage(roomId, '❌ Start anulowany. Po usunięciu niepotwierdzonych graczy zostało mniej niż 5 osób.');
-  }
+  await emitSystemRoomMessage(roomId, '❌ Start anulowany. Po usunięciu niepotwierdzonych graczy zostało mniej niż 5 osób.');
 }
 
 function hasConnectedHumanInGame(roomId) {

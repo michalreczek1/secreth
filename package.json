@@ -6,7 +6,9 @@
   "scripts": {
     "start": "node server/index.js",
     "dev": "nodemon server/index.js",
-    "migrate:pg": "node scripts/migrate-nedb-to-postgres.js"
+    "migrate:pg": "node scripts/migrate-nedb-to-postgres.js",
+    "test:bot-balance": "node scripts/test-bot-balance.js",
+    "test:ui-smoke": "node scripts/test-room-bot-difficulty-ui.js"
   },
   "dependencies": {
     "@seald-io/nedb": "^4.0.4",
@@ -19,6 +21,8 @@
     "uuid": "^9.0.0"
   },
   "devDependencies": {
-    "nodemon": "^3.0.2"
+    "nodemon": "^3.0.2",
+    "playwright": "^1.58.2",
+    "socket.io-client": "^4.8.3"
   }
 }

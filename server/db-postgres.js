@@ -31,6 +31,7 @@ function mapRoom(row) {
     ownerId: row.owner_id,
     ownerName: row.owner_name,
     state: row.state,
+    botDifficulty: row.bot_difficulty || 'medium',
     gameData: row.game_data ? JSON.stringify(row.game_data) : null,
     createdAt: toIso(row.created_at),
   };
@@ -92,9 +93,13 @@ async function createPostgresStore({ connectionString }) {
         owner_id TEXT NOT NULL,
         owner_name TEXT NOT NULL,
         state TEXT NOT NULL,
+        bot_difficulty TEXT NOT NULL DEFAULT 'medium',
         game_data JSONB NULL,
         created_at TIMESTAMPTZ NOT NULL
       );
+
+      ALTER TABLE rooms
+      ADD COLUMN IF NOT EXISTS bot_difficulty TEXT NOT NULL DEFAULT 'medium';
 
       CREATE TABLE IF NOT EXISTS room_players (
         room_id TEXT NOT NULL,
@@ -177,8 +182,8 @@ async function createPostgresStore({ connectionString }) {
       },
       async create(id, name, ownerId, ownerName, options = {}) {
         const { rows } = await query(`
-          INSERT INTO rooms (id, name, owner_id, owner_name, state, game_data, created_at)
-          VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7)
+          INSERT INTO rooms (id, name, owner_id, owner_name, state, bot_difficulty, game_data, created_at)
+          VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8)
           RETURNING *
         `, [
           id,
@@ -186,6 +191,7 @@ async function createPostgresStore({ connectionString }) {
           ownerId,
           ownerName,
           options.state || 'lobby',
+          options.botDifficulty || 'medium',
           options.gameData || null,
           options.createdAt || new Date().toISOString(),
         ]);
@@ -193,6 +199,9 @@ async function createPostgresStore({ connectionString }) {
       },
       async setState(id, state, gameData) {
         await query('UPDATE rooms SET state = $2, game_data = $3::jsonb WHERE id = $1', [id, state, gameData || null]);
+      },
+      async setBotDifficulty(id, botDifficulty) {
+        await query('UPDATE rooms SET bot_difficulty = $2 WHERE id = $1', [id, botDifficulty]);
       },
       async delete(id) {
         await query('DELETE FROM rooms WHERE id = $1', [id]);

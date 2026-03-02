@@ -263,7 +263,7 @@ function emitRoomStartConfirmation(roomId) {
   io.to(`room:${roomId}`).emit('room:startConfirmation', serializeRoomStartConfirmation(roomStartConfirmations.get(roomId)));
 }
 
-async function removeUserFromLobbyRoom(roomId, userId, reason = null) {
+async function removeUserFromRoom(roomId, userId, reason = null) {
   await db.roomPlayers.remove(roomId, userId);
   for (const [socketId, su] of socketUsers.entries()) {
     if (su.userId !== userId || su.roomId !== roomId) continue;
@@ -364,7 +364,7 @@ async function finalizeRoomStartConfirmation(roomId) {
 
   const unconfirmed = control.participants.filter((participant) => !participant.confirmedAt);
   for (const participant of unconfirmed) {
-    await removeUserFromLobbyRoom(
+    await removeUserFromRoom(
       roomId,
       participant.userId,
       'Nie potwierdziłeś startu gry na czas i zostałeś usunięty z pokoju.'
@@ -1469,6 +1469,9 @@ async function resolveDisconnectChoice(roomId, choice, context = {}) {
   const control = state.disconnectControl;
   const targetUserId = context.targetUserId || control?.targetUserId;
   const targetUsername = context.targetUsername || control?.targetUsername || 'Gracz';
+  const disconnectedCleanupIds = state.players
+    .filter((player) => !isBotId(player.id) && player.connected === false && !state.botControlled[player.id])
+    .map((player) => player.id);
 
   clearDisconnectTimer(roomId);
 
@@ -1498,6 +1501,10 @@ async function resolveDisconnectChoice(roomId, choice, context = {}) {
     clearBotTimer(roomId);
     clearDisconnectTimer(roomId);
     await db.rooms.setState(roomId, 'lobby', null);
+    for (const userId of disconnectedCleanupIds) {
+      await removeUserFromRoom(roomId, userId);
+    }
+    await emitRoomPlayers(roomId);
     io.to(`room:${roomId}`).emit('game:reset');
     io.emit('rooms:updated');
   }

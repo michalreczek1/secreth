@@ -1531,18 +1531,18 @@ label { font-size: 12px; color: var(--text-dim); display: block; margin-bottom: 
     padding: 10px;
   }
   .claim-history-row {
-    grid-template-columns: 68px minmax(0, 1fr) auto;
+    grid-template-columns: 74px minmax(0, 1fr) auto;
     grid-template-areas: "role name value";
-    gap: 6px;
+    gap: 8px;
     align-items: center;
   }
   .claim-history-value {
     justify-content: flex-end;
   }
   .claim-history-preview-line {
-    grid-template-columns: 68px minmax(0, 1fr) auto;
+    grid-template-columns: 74px minmax(0, 1fr) auto;
     grid-template-areas: "role name value";
-    gap: 6px;
+    gap: 8px;
     align-items: center;
   }
   .claim-history-name {

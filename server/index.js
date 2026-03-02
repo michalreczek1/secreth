@@ -11,6 +11,7 @@ const fs         = require('fs');
 
 const { db }   = require('./db');
 const game     = require('./game');
+const logger   = require('./logger');
 
 const app    = express();
 const server = http.createServer(app);
@@ -77,6 +78,14 @@ const LOGIN_USERNAME_MAX_ATTEMPTS = 8;
 
 const loginIpBuckets = new Map();
 const loginUsernameBuckets = new Map();
+
+process.on('unhandledRejection', (reason) => {
+  logger.error('process.unhandled_rejection', { error: reason });
+});
+
+process.on('uncaughtException', (error) => {
+  logger.error('process.uncaught_exception', { error });
+});
 
 const BOT_NAMES = [
   'Otto', 'Greta', 'Erika', 'Walter', 'Bruno',
@@ -563,7 +572,7 @@ app.post('/api/register', async (req, res) => {
     await db.users.create(username, hash);
     res.json({ ok: true, message: 'Konto utworzone! Czekaj na aktywację przez admina.' });
   } catch (e) {
-    console.error('register error', e);
+    logger.error('auth.register.failed', { error: e, username: req.body?.username, ip: req.ip });
     res.status(500).json({ error: 'Błąd serwera' });
   }
 });
@@ -603,7 +612,7 @@ app.post('/api/login', async (req, res) => {
       activeRoom,
     });
   } catch (e) {
-    console.error('login error', e);
+    logger.error('auth.login.failed', { error: e, username: req.body?.username, ip: req.ip });
     res.status(500).json({ error: 'Błąd serwera' });
   }
 });
@@ -615,7 +624,7 @@ app.post('/api/logout', (req, res) => {
     await destroySession(req);
     res.json({ ok: true });
   })().catch((e) => {
-    console.error('logout error', e);
+    logger.error('auth.logout.failed', { error: e, userId, ip: req.ip });
     res.status(500).json({ error: 'Błąd serwera' });
   });
 });
@@ -650,7 +659,7 @@ app.post('/api/account/change-password', requireAuth, async (req, res) => {
     await db.users.setPasswordHash(user._id, hash);
     res.json({ ok: true });
   } catch (e) {
-    console.error('change password error', e);
+    logger.error('auth.change_password.failed', { error: e, userId: req.session?.userId, ip: req.ip });
     res.status(500).json({ error: 'Błąd serwera' });
   }
 });
@@ -698,7 +707,12 @@ app.post('/api/admin/users/:id/reset-password', requireAuth, requireAdmin, async
     await db.users.setPasswordHash(req.params.id, hash);
     res.json({ ok: true });
   } catch (e) {
-    console.error('reset password error', e);
+    logger.error('admin.reset_password.failed', {
+      error: e,
+      adminUserId: req.session?.userId,
+      targetUserId: req.params?.id,
+      ip: req.ip,
+    });
     res.status(500).json({ error: 'Błąd serwera' });
   }
 });
@@ -832,7 +846,7 @@ io.on('connection', async (socket) => {
   sess.save(() => {});
   socketUsers.set(socket.id, { userId, username, roomId: null });
   db.users.setLastSeen(userId);
-  console.log(`🔌 ${username} połączony`);
+  logger.info('socket.connected', { socketId: socket.id, userId, username });
 
   async function ensureSocketUserActive(callback) {
     try {
@@ -940,7 +954,7 @@ io.on('connection', async (socket) => {
         players: updatedPlayers.map((p) => ({ id: p.userId, username: p.username })),
       });
     } catch (e) {
-      console.error('room:join error', e);
+      logger.error('room.join.failed', { error: e, socketId: socket.id, userId, username, roomId });
       callback?.({ error: 'Błąd serwera' });
     }
   });
@@ -1023,7 +1037,7 @@ io.on('connection', async (socket) => {
           timer: null,
         };
         control.timer = setTimeout(() => {
-          finalizeRoomStartConfirmation(roomId).catch((e) => console.error('room:start finalize error', e));
+          finalizeRoomStartConfirmation(roomId).catch((e) => logger.error('room.start_confirmation.finalize_failed', { error: e, roomId }));
         }, ROOM_START_CONFIRM_MS);
         roomStartConfirmations.set(roomId, control);
         await emitSystemRoomMessage(roomId, `🗳️ ${username} chce rozpocząć grę. Wszyscy gracze muszą potwierdzić start w ciągu 90 sekund.`);
@@ -1038,7 +1052,7 @@ io.on('connection', async (socket) => {
       if (!started) emitRoomStartConfirmation(roomId);
       callback?.({ ok: true, pending: !started, started });
     } catch (e) {
-      console.error('game:start error', e);
+      logger.error('game.start.failed', { error: e, socketId: socket.id, userId, username, roomId });
       callback?.({ error: e.message });
     }
   });
@@ -1069,7 +1083,7 @@ io.on('connection', async (socket) => {
       if (shouldBotsPlay(roomId)) scheduleBots(roomId, 700);
       callback?.({ ok: true });
     } catch (e) {
-      console.error('game:action error', e);
+      logger.error('game.action.failed', { error: e, action, socketId: socket.id, userId, username, roomId });
       callback?.({ error: e.message });
     }
   });
@@ -1147,7 +1161,7 @@ io.on('connection', async (socket) => {
             const endVoteFinished = await reconcileEndVoteControl(su.roomId);
             if (endVoteFinished) {
               socketUsers.delete(socket.id);
-              console.log(`❌ ${username} rozłączony`);
+              logger.info('socket.disconnected', { socketId: socket.id, userId, username, roomId: su.roomId });
               return;
             }
             await ensureDisconnectWorkflow(su.roomId);
@@ -1158,7 +1172,7 @@ io.on('connection', async (socket) => {
       }
     }
     socketUsers.delete(socket.id);
-    console.log(`❌ ${username} rozłączony`);
+    logger.info('socket.disconnected', { socketId: socket.id, userId, username, roomId: su?.roomId || null });
   });
 });
 
@@ -1481,7 +1495,7 @@ async function beginDisconnectWait(roomId, targetUserId, durationMs, logMessage 
   await persistActiveGameState(roomId);
   broadcastGameState(roomId);
   roomDisconnectTimers.set(roomId, setTimeout(() => {
-    openDisconnectDecision(roomId, targetUserId).catch((e) => console.error('disconnect decision error', e));
+    openDisconnectDecision(roomId, targetUserId).catch((e) => logger.error('game.disconnect_decision.failed', { error: e, roomId, targetUserId }));
   }, durationMs));
 }
 
@@ -1763,7 +1777,7 @@ function scheduleBots(roomId, delay = 600) {
   if (!shouldBotsPlay(roomId)) return;
   clearBotTimer(roomId);
   roomBotTimers.set(roomId, setTimeout(() => {
-    runBotTurn(roomId).catch((e) => console.error('bot turn error', e));
+    runBotTurn(roomId).catch((e) => logger.error('bot.turn.failed', { error: e, roomId }));
   }, delay));
 }
 
@@ -1946,13 +1960,18 @@ async function forceLogoutUser(userId) {
 
 // ── START ─────────────────────────────────────────────────────────────────────
 server.listen(PORT, async () => {
-  console.log(`\n🎮 Secret Hitler Online → http://localhost:${PORT}`);
-  console.log(`👤 Admin: admin / admin123`);
   try {
+    const provider = await db.provider().catch(() => 'unknown');
+    logger.info('server.started', {
+      port: PORT,
+      provider,
+      dataDir: process.env.DATA_DIR || path.join(__dirname, '..', 'data'),
+      railwayService: process.env.RAILWAY_SERVICE_NAME || null,
+      railwayPublicDomain: process.env.RAILWAY_PUBLIC_DOMAIN || null,
+    });
     const stats = await restoreActiveGames();
-    console.log(`♻️ Przywrócono gier: ${stats.restored}, zresetowano do lobby: ${stats.resetToLobby}`);
+    logger.info('server.restore_active_games.completed', stats);
   } catch (e) {
-    console.error('restoreActiveGames error', e);
+    logger.error('server.restore_active_games.failed', { error: e });
   }
-  console.log(`📁 Dane: data/\n`);
 });

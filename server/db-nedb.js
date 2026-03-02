@@ -2,6 +2,7 @@ const Datastore = require('@seald-io/nedb');
 const path = require('path');
 const fs = require('fs');
 const bcrypt = require('bcryptjs');
+const logger = require('./logger');
 
 function createNedbStore({ dataDir }) {
   fs.mkdirSync(dataDir, { recursive: true });
@@ -111,7 +112,10 @@ function createNedbStore({ dataDir }) {
         createdAt: new Date().toISOString(),
         lastSeen: null,
       });
-      console.log('✅ Domyślny admin: admin / admin123');
+      logger.warn('security.default_admin_created', {
+        username: 'admin',
+        message: 'Created default admin account. Change password immediately.',
+      });
     }
   };
 

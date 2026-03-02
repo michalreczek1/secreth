@@ -1,6 +1,7 @@
 const { Pool } = require('pg');
 const { v4: uuidv4 } = require('uuid');
 const bcrypt = require('bcryptjs');
+const logger = require('./logger');
 
 function toIso(value) {
   if (!value) return null;
@@ -261,7 +262,10 @@ async function createPostgresStore({ connectionString }) {
     if (!rows.length) {
       const hash = bcrypt.hashSync('admin123', 10);
       await store.users.create('admin', hash, { isAdmin: true, isActive: true });
-      console.log('✅ Domyślny admin: admin / admin123');
+      logger.warn('security.default_admin_created', {
+        username: 'admin',
+        message: 'Created default admin account. Change password immediately.',
+      });
     }
   };
 

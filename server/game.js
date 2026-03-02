@@ -135,6 +135,42 @@ function appendVoteHistory(state, votes, passed) {
   return [entry, ...(state.voteHistory || [])].slice(0, 20);
 }
 
+function upsertClaimHistory(state, session, role, summary, skipped) {
+  const current = Array.isArray(state.claimHistory) ? state.claimHistory : [];
+  const existingIndex = current.findIndex((entry) => entry.sessionId === session.sessionId);
+  const baseEntry = existingIndex >= 0
+    ? current[existingIndex]
+    : {
+        sessionId: session.sessionId,
+        createdAt: new Date().toISOString(),
+        presidentId: session.presidentId,
+        presidentName: session.presidentName,
+        presidentClaim: null,
+        presidentSkipped: false,
+        chancellorId: session.chancellorId,
+        chancellorName: session.chancellorName,
+        chancellorClaim: null,
+        chancellorSkipped: false,
+      };
+
+  const nextEntry = {
+    ...baseEntry,
+    presidentName: session.presidentName,
+    chancellorName: session.chancellorName,
+    ...(role === 'president'
+      ? { presidentClaim: skipped ? null : summary, presidentSkipped: !!skipped }
+      : { chancellorClaim: skipped ? null : summary, chancellorSkipped: !!skipped }),
+  };
+
+  if (existingIndex >= 0) {
+    const next = [...current];
+    next[existingIndex] = nextEntry;
+    return next.slice(0, 20);
+  }
+
+  return [nextEntry, ...current].slice(0, 20);
+}
+
 // ── TWORZENIE GRY ─────────────────────────────────────────────────────────────
 function createGame(playerList) {
   // playerList: [{id, username}]
@@ -180,6 +216,7 @@ function createGame(playerList) {
     log: [],
     voteHistory: [],
     claimSessions: [],
+    claimHistory: [],
   };
 }
 
@@ -497,7 +534,7 @@ function submitClaim(state, userId, sessionId, summary, skipped = false) {
   const nextSessions = [...sessions];
   nextSessions[sessionIndex] = session;
   const cleanedSessions = nextSessions.filter((item) => !(item.presidentSubmitted && item.chancellorSubmitted));
-  const nextState = { ...state, claimSessions: cleanedSessions };
+  const nextState = { ...state, claimSessions: cleanedSessions, claimHistory: upsertClaimHistory(state, session, role, summary, skipped) };
 
   return {
     state: nextState,
@@ -579,6 +616,7 @@ function getPlayerView(state, userId) {
     winReason: state.winReason,
     log: state.log,
     voteHistory: state.voteHistory || [],
+    claimHistory: state.claimHistory || [],
     votes: state.phase === 'vote' && !allAlivePlayersVoted(state) ? {} : state.votes,
     votesSubmitted: getVotesSubmitted(state),
     myVote: me ? state.votes?.[me.id] || null : null,

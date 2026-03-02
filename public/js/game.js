@@ -15,6 +15,7 @@ const Game = {
   shownClaimKey: null,
   selectedClaimSummary: null,
   activeClaimPrompt: null,
+  claimHistoryExpanded: false,
   pendingVoteChoice: null,
   lastVoteTapAt: 0,
   lastVoteTapChoice: null,
@@ -62,6 +63,7 @@ const Game = {
     this.shownClaimKey = null;
     this.selectedClaimSummary = null;
     this.activeClaimPrompt = null;
+    this.claimHistoryExpanded = false;
     this.pendingVoteChoice = null;
     this.lastVoteTapAt = 0;
     this.lastVoteTapChoice = null;
@@ -112,7 +114,7 @@ const Game = {
           ${this.renderActionPanel(s)}
           ${this.renderPlayersSide(s)}
         </div>
-        ${this.renderVoteHistory(s)}
+        ${this.renderAnalysisPanels(s)}
         ${this.renderLog(s)}
       </div>
     `;
@@ -634,6 +636,69 @@ const Game = {
     `;
   },
 
+  renderAnalysisPanels(s) {
+    return `
+      <div class="game-analysis">
+        ${this.renderClaimHistory(s)}
+        ${this.renderVoteHistory(s)}
+      </div>
+    `;
+  },
+
+  renderClaimHistory(s) {
+    const entries = s.claimHistory || [];
+    const latest = entries[0] || null;
+    const preview = latest ? `
+      <div class="claim-history-preview">
+        <div class="claim-history-preview-line">
+          <span class="claim-history-role">Prezydent</span>
+          <span class="claim-history-name">${UI.escapeHtml(latest.presidentName || '—')}</span>
+          <span class="claim-history-value compact">${this.renderClaimHistoryValue(latest.presidentClaim, latest.presidentSkipped, true)}</span>
+        </div>
+        <div class="claim-history-preview-line">
+          <span class="claim-history-role">Kanclerz</span>
+          <span class="claim-history-name">${UI.escapeHtml(latest.chancellorName || '—')}</span>
+          <span class="claim-history-value compact">${this.renderClaimHistoryValue(latest.chancellorClaim, latest.chancellorSkipped, true)}</span>
+        </div>
+      </div>
+    ` : '<div class="claim-history-preview claim-history-empty">Brak deklaracji w tej partii.</div>';
+
+    const items = entries.map((entry, index) => `
+      <div class="claim-history-entry">
+        <div class="claim-history-head">
+          <span class="badge badge-vote-pending">Sesja ${entries.length - index}</span>
+        </div>
+        <div class="claim-history-rows">
+          <div class="claim-history-row">
+            <span class="claim-history-role">Prezydent</span>
+            <span class="claim-history-name">${UI.escapeHtml(entry.presidentName || '—')}</span>
+            <span class="claim-history-value">${this.renderClaimHistoryValue(entry.presidentClaim, entry.presidentSkipped)}</span>
+          </div>
+          <div class="claim-history-row">
+            <span class="claim-history-role">Kanclerz</span>
+            <span class="claim-history-name">${UI.escapeHtml(entry.chancellorName || '—')}</span>
+            <span class="claim-history-value">${this.renderClaimHistoryValue(entry.chancellorClaim, entry.chancellorSkipped)}</span>
+          </div>
+        </div>
+      </div>
+    `).join('');
+
+    return `
+      <div class="claim-history-panel ${this.claimHistoryExpanded ? 'expanded' : ''}">
+        <div class="claim-history-title-row">
+          <div class="section-title game-subsection-title">Historia Deklaracji</div>
+          <button class="btn btn-ghost btn-sm claim-history-toggle" type="button" onclick="Game.toggleClaimHistory()">
+            ${this.claimHistoryExpanded ? 'Ukryj' : 'Pokaż'}
+          </button>
+        </div>
+        ${preview}
+        <div class="claim-history-list">
+          ${items || '<div class="claim-history-empty">Brak złożonych deklaracji w tej partii.</div>'}
+        </div>
+      </div>
+    `;
+  },
+
   renderVoteHistory(s) {
     const entries = (s.voteHistory || []).map((entry) => {
       const votes = (entry.votes || []).map((vote) => `
@@ -670,6 +735,12 @@ const Game = {
     if (vote === 'Ja') return '<span class="vote-history-chip vote-history-chip-ja">🕊️ JA</span>';
     if (vote === 'Nein') return '<span class="vote-history-chip vote-history-chip-nein">☠️ NEIN</span>';
     return '<span class="vote-history-chip vote-history-chip-pending">—</span>';
+  },
+
+  renderClaimHistoryValue(summary, skipped, compact = false) {
+    if (skipped) return '<span class="claim-history-skipped">Pominięto</span>';
+    if (!summary) return `<span class="claim-history-waiting">${compact ? '—' : 'Brak deklaracji'}</span>`;
+    return `<span class="claim-history-cards ${compact ? 'compact' : ''}">${this.renderClaimSummary(summary)}</span>`;
   },
 
   renderWin(s) {
@@ -1053,6 +1124,11 @@ const Game = {
     });
     const confirmBtn = document.getElementById('claim-confirm-btn');
     if (confirmBtn) confirmBtn.disabled = !this.selectedClaimSummary;
+  },
+
+  toggleClaimHistory() {
+    this.claimHistoryExpanded = !this.claimHistoryExpanded;
+    this.render();
   },
 
   // ── AKCJE ──────────────────────────────────────────────────────────────────

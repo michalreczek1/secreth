@@ -1267,11 +1267,19 @@ function buildGameView(roomId, userId) {
 async function finishGameByConsensus(roomId, initiatedByUsername = 'Gracze') {
   const ag = activeGames.get(roomId);
   if (!ag?.state) throw new Error('Brak aktywnej gry');
+  const state = ensureGameMetaState(ag.state);
+  const disconnectedCleanupIds = state.players
+    .filter((player) => !isBotId(player.id) && player.connected === false && !state.botControlled[player.id])
+    .map((player) => player.id);
 
   clearBotTimer(roomId);
   clearDisconnectTimer(roomId);
   activeGames.delete(roomId);
   await db.rooms.setState(roomId, 'lobby', null);
+  for (const userId of disconnectedCleanupIds) {
+    await removeUserFromRoom(roomId, userId);
+  }
+  await emitRoomPlayers(roomId);
   io.to(`room:${roomId}`).emit('game:reset');
   io.emit('rooms:updated');
   await emitSystemRoomMessage(roomId, `🛑 Gra została zakończona na zgodny wniosek graczy. Inicjator: ${initiatedByUsername}.`);

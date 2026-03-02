@@ -26,6 +26,11 @@ fs.mkdirSync(SESSION_DIR, { recursive: true });
 
 // ── MIDDLEWARE ────────────────────────────────────────────────────────────────
 app.use(express.json());
+app.use((req, res, next) => {
+  req.requestId = req.get('x-request-id') || uuidv4();
+  res.setHeader('x-request-id', req.requestId);
+  next();
+});
 app.use(express.static(path.join(__dirname, '..', 'public')));
 app.get('/healthz', (_req, res) => {
   res.status(200).json({
@@ -161,6 +166,38 @@ function getLoginRetryMessage(retryAfterMs) {
   return `Zbyt wiele nieudanych prób logowania. Spróbuj ponownie za ${minutes} min.`;
 }
 
+function getRequestMeta(req, extra = {}) {
+  return {
+    requestId: req.requestId,
+    method: req.method,
+    path: req.originalUrl,
+    ip: req.ip,
+    userId: req.session?.userId || null,
+    ...extra,
+  };
+}
+
+function jsonError(res, status, message, extra = {}) {
+  const payload = { error: message };
+  if (res.req?.requestId) payload.requestId = res.req.requestId;
+  if (extra.traceId) payload.traceId = extra.traceId;
+  return res.status(status).json(payload);
+}
+
+function createSocketTrace(socket, event, extra = {}) {
+  return {
+    traceId: uuidv4(),
+    event,
+    socketId: socket.id,
+    connectionId: socket.data?.connectionId || null,
+    ...extra,
+  };
+}
+
+function callbackError(callback, message, trace) {
+  callback?.(trace?.traceId ? { error: message, traceId: trace.traceId } : { error: message });
+}
+
 // ── AUTH MIDDLEWARE ───────────────────────────────────────────────────────────
 async function destroySession(req) {
   if (!req.session) return;
@@ -189,7 +226,8 @@ const requireAuth  = async (req, res, next) => {
     }
     next();
   } catch (e) {
-    res.status(500).json({ error: 'Błąd serwera' });
+    logger.error('auth.require_auth.failed', { error: e, ...getRequestMeta(req) });
+    jsonError(res, 500, 'Błąd serwera');
   }
 };
 
@@ -203,7 +241,8 @@ const requireAdmin = async (req, res, next) => {
     if (!user.isAdmin) return res.status(403).json({ error: 'Brak uprawnień' });
     next();
   } catch (e) {
-    res.status(500).json({ error: 'Błąd serwera' });
+    logger.error('auth.require_admin.failed', { error: e, ...getRequestMeta(req) });
+    jsonError(res, 500, 'Błąd serwera');
   }
 };
 
@@ -572,8 +611,8 @@ app.post('/api/register', async (req, res) => {
     await db.users.create(username, hash);
     res.json({ ok: true, message: 'Konto utworzone! Czekaj na aktywację przez admina.' });
   } catch (e) {
-    logger.error('auth.register.failed', { error: e, username: req.body?.username, ip: req.ip });
-    res.status(500).json({ error: 'Błąd serwera' });
+    logger.error('auth.register.failed', { error: e, username: req.body?.username, ...getRequestMeta(req) });
+    jsonError(res, 500, 'Błąd serwera');
   }
 });
 
@@ -612,8 +651,8 @@ app.post('/api/login', async (req, res) => {
       activeRoom,
     });
   } catch (e) {
-    logger.error('auth.login.failed', { error: e, username: req.body?.username, ip: req.ip });
-    res.status(500).json({ error: 'Błąd serwera' });
+    logger.error('auth.login.failed', { error: e, username: req.body?.username, ...getRequestMeta(req) });
+    jsonError(res, 500, 'Błąd serwera');
   }
 });
 
@@ -624,8 +663,8 @@ app.post('/api/logout', (req, res) => {
     await destroySession(req);
     res.json({ ok: true });
   })().catch((e) => {
-    logger.error('auth.logout.failed', { error: e, userId, ip: req.ip });
-    res.status(500).json({ error: 'Błąd serwera' });
+    logger.error('auth.logout.failed', { error: e, userId, ...getRequestMeta(req) });
+    jsonError(res, 500, 'Błąd serwera');
   });
 });
 
@@ -659,8 +698,8 @@ app.post('/api/account/change-password', requireAuth, async (req, res) => {
     await db.users.setPasswordHash(user._id, hash);
     res.json({ ok: true });
   } catch (e) {
-    logger.error('auth.change_password.failed', { error: e, userId: req.session?.userId, ip: req.ip });
-    res.status(500).json({ error: 'Błąd serwera' });
+    logger.error('auth.change_password.failed', { error: e, ...getRequestMeta(req) });
+    jsonError(res, 500, 'Błąd serwera');
   }
 });
 
@@ -711,9 +750,9 @@ app.post('/api/admin/users/:id/reset-password', requireAuth, requireAdmin, async
       error: e,
       adminUserId: req.session?.userId,
       targetUserId: req.params?.id,
-      ip: req.ip,
+      ...getRequestMeta(req),
     });
-    res.status(500).json({ error: 'Błąd serwera' });
+    jsonError(res, 500, 'Błąd serwera');
   }
 });
 
@@ -733,7 +772,8 @@ app.get('/api/rooms', requireAuth, async (req, res) => {
     }));
     res.json(result);
   } catch (e) {
-    res.status(500).json({ error: 'Błąd serwera' });
+    logger.error('rooms.list.failed', { error: e, ...getRequestMeta(req) });
+    jsonError(res, 500, 'Błąd serwera');
   }
 });
 
@@ -748,7 +788,8 @@ app.post('/api/rooms', requireAuth, async (req, res) => {
     io.emit('rooms:updated');
     res.json({ ok: true, room: { id: room._id, name: room.name } });
   } catch (e) {
-    res.status(500).json({ error: 'Błąd serwera' });
+    logger.error('rooms.create.failed', { error: e, roomName: req.body?.name, ...getRequestMeta(req) });
+    jsonError(res, 500, 'Błąd serwera');
   }
 });
 
@@ -767,7 +808,8 @@ app.delete('/api/rooms/:id', requireAuth, async (req, res) => {
     io.emit('rooms:updated');
     res.json({ ok: true });
   } catch (e) {
-    res.status(500).json({ error: 'Błąd serwera' });
+    logger.error('rooms.delete.failed', { error: e, roomId: req.params?.id, ...getRequestMeta(req) });
+    jsonError(res, 500, 'Błąd serwera');
   }
 });
 
@@ -804,7 +846,8 @@ app.post('/api/rooms/:id/bots', requireAuth, async (req, res) => {
     await emitRoomPlayers(req.params.id);
     res.json({ ok: true, added: toAdd });
   } catch (e) {
-    res.status(500).json({ error: 'Błąd serwera' });
+    logger.error('rooms.bots.add.failed', { error: e, roomId: req.params?.id, ...getRequestMeta(req) });
+    jsonError(res, 500, 'Błąd serwera');
   }
 });
 
@@ -827,7 +870,8 @@ app.delete('/api/rooms/:id/bots', requireAuth, async (req, res) => {
     await emitRoomPlayers(req.params.id);
     res.json({ ok: true, removed: bots.length });
   } catch (e) {
-    res.status(500).json({ error: 'Błąd serwera' });
+    logger.error('rooms.bots.remove.failed', { error: e, roomId: req.params?.id, ...getRequestMeta(req) });
+    jsonError(res, 500, 'Błąd serwera');
   }
 });
 
@@ -841,12 +885,13 @@ io.on('connection', async (socket) => {
 
   const userId = user._id;
   let username = user.username;
+  socket.data.connectionId = uuidv4();
   sess.username = user.username;
   sess.isAdmin = !!user.isAdmin;
   sess.save(() => {});
   socketUsers.set(socket.id, { userId, username, roomId: null });
   db.users.setLastSeen(userId);
-  logger.info('socket.connected', { socketId: socket.id, userId, username });
+  logger.info('socket.connected', { socketId: socket.id, connectionId: socket.data.connectionId, userId, username });
 
   async function ensureSocketUserActive(callback) {
     try {
@@ -866,6 +911,7 @@ io.on('connection', async (socket) => {
 
   // ── POKOJE ──────────────────────────────────────────────────────────────────
   socket.on('room:join', async (roomId, callback) => {
+    const trace = createSocketTrace(socket, 'room:join', { userId, username, roomId });
     try {
       if (!(await ensureSocketUserActive(callback))) return;
       const room = await db.rooms.findById(roomId);
@@ -954,8 +1000,8 @@ io.on('connection', async (socket) => {
         players: updatedPlayers.map((p) => ({ id: p.userId, username: p.username })),
       });
     } catch (e) {
-      logger.error('room.join.failed', { error: e, socketId: socket.id, userId, username, roomId });
-      callback?.({ error: 'Błąd serwera' });
+      logger.error('room.join.failed', { error: e, ...trace });
+      callbackError(callback, 'Błąd serwera', trace);
     }
   });
 
@@ -1002,6 +1048,7 @@ io.on('connection', async (socket) => {
 
   // ── GRA ─────────────────────────────────────────────────────────────────────
   socket.on('game:start', async (roomId, callback) => {
+    const trace = createSocketTrace(socket, 'game:start', { userId, username, roomId });
     try {
       if (!(await ensureSocketUserActive(callback))) return;
       const room = await db.rooms.findById(roomId);
@@ -1052,8 +1099,8 @@ io.on('connection', async (socket) => {
       if (!started) emitRoomStartConfirmation(roomId);
       callback?.({ ok: true, pending: !started, started });
     } catch (e) {
-      logger.error('game.start.failed', { error: e, socketId: socket.id, userId, username, roomId });
-      callback?.({ error: e.message });
+      logger.error('game.start.failed', { error: e, ...trace });
+      callbackError(callback, e.message, trace);
     }
   });
 
@@ -1077,38 +1124,44 @@ io.on('connection', async (socket) => {
   });
 
   socket.on('game:action', async ({ roomId, action, payload }, callback) => {
+    const trace = createSocketTrace(socket, 'game:action', { userId, username, roomId, action });
     try {
       if (!(await ensureSocketUserActive(callback))) return;
       await processGameAction(roomId, userId, action, payload);
       if (shouldBotsPlay(roomId)) scheduleBots(roomId, 700);
       callback?.({ ok: true });
     } catch (e) {
-      logger.error('game.action.failed', { error: e, action, socketId: socket.id, userId, username, roomId });
-      callback?.({ error: e.message });
+      logger.error('game.action.failed', { error: e, ...trace });
+      callbackError(callback, e.message, trace);
     }
   });
 
   socket.on('game:declareClaim', async ({ roomId, sessionId, summary, skipped }, callback) => {
+    const trace = createSocketTrace(socket, 'game:declareClaim', { userId, username, roomId, sessionId });
     try {
       if (!(await ensureSocketUserActive(callback))) return;
       await submitLegislativeClaim(roomId, userId, sessionId, summary, !!skipped);
       callback?.({ ok: true });
     } catch (e) {
-      callback?.({ error: e.message });
+      logger.error('game.declare_claim.failed', { error: e, ...trace });
+      callbackError(callback, e.message, trace);
     }
   });
 
   socket.on('game:disconnectDecision', async ({ roomId, choice }, callback) => {
+    const trace = createSocketTrace(socket, 'game:disconnectDecision', { userId, username, roomId, choice });
     try {
       if (!(await ensureSocketUserActive(callback))) return;
       await castDisconnectVote(roomId, userId, choice);
       callback?.({ ok: true });
     } catch (e) {
-      callback?.({ error: e.message });
+      logger.error('game.disconnect_decision.vote_failed', { error: e, ...trace });
+      callbackError(callback, e.message, trace);
     }
   });
 
   socket.on('game:endVote', async ({ roomId, action, accept }, callback) => {
+    const trace = createSocketTrace(socket, 'game:endVote', { userId, username, roomId, action });
     try {
       if (!(await ensureSocketUserActive(callback))) return;
       if (action === 'request') await requestEndGameVote(roomId, userId);
@@ -1116,11 +1169,13 @@ io.on('connection', async (socket) => {
       else throw new Error('Nieznana akcja zakończenia gry');
       callback?.({ ok: true });
     } catch (e) {
-      callback?.({ error: e.message });
+      logger.error('game.end_vote.failed', { error: e, ...trace });
+      callbackError(callback, e.message, trace);
     }
   });
 
   socket.on('game:restart', async (roomId, callback) => {
+    const trace = createSocketTrace(socket, 'game:restart', { userId, username, roomId });
     try {
       if (!(await ensureSocketUserActive(callback))) return;
       const room = await db.rooms.findById(roomId);
@@ -1135,7 +1190,8 @@ io.on('connection', async (socket) => {
       io.emit('rooms:updated');
       callback?.({ ok: true });
     } catch (e) {
-      callback?.({ error: e.message });
+      logger.error('game.restart.failed', { error: e, ...trace });
+      callbackError(callback, e.message, trace);
     }
   });
 
@@ -1161,7 +1217,7 @@ io.on('connection', async (socket) => {
             const endVoteFinished = await reconcileEndVoteControl(su.roomId);
             if (endVoteFinished) {
               socketUsers.delete(socket.id);
-              logger.info('socket.disconnected', { socketId: socket.id, userId, username, roomId: su.roomId });
+              logger.info('socket.disconnected', { socketId: socket.id, connectionId: socket.data.connectionId, userId, username, roomId: su.roomId });
               return;
             }
             await ensureDisconnectWorkflow(su.roomId);
@@ -1172,7 +1228,7 @@ io.on('connection', async (socket) => {
       }
     }
     socketUsers.delete(socket.id);
-    logger.info('socket.disconnected', { socketId: socket.id, userId, username, roomId: su?.roomId || null });
+    logger.info('socket.disconnected', { socketId: socket.id, connectionId: socket.data.connectionId, userId, username, roomId: su?.roomId || null });
   });
 });
 

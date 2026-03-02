@@ -292,6 +292,57 @@ input[type=text]:focus, input[type=password]:focus, textarea:focus {
 }
 input::placeholder { color: var(--text-muted); }
 
+.bot-difficulty-select {
+  width: 100%;
+  min-height: 42px;
+  padding: 9px 42px 9px 12px;
+  border: 2px solid var(--gold-dim);
+  color: var(--gold);
+  background:
+    linear-gradient(180deg, rgba(35,24,10,.95) 0%, rgba(18,12,5,.98) 100%);
+  font-family: 'Special Elite', monospace;
+  font-size: 12px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  outline: none;
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  box-shadow: inset 0 0 0 1px rgba(201,162,39,.08);
+  background-image:
+    linear-gradient(45deg, transparent 50%, var(--gold) 50%),
+    linear-gradient(135deg, var(--gold) 50%, transparent 50%),
+    linear-gradient(180deg, rgba(35,24,10,.95) 0%, rgba(18,12,5,.98) 100%);
+  background-position:
+    calc(100% - 18px) calc(50% - 2px),
+    calc(100% - 12px) calc(50% - 2px),
+    0 0;
+  background-size:
+    6px 6px,
+    6px 6px,
+    100% 100%;
+  background-repeat: no-repeat;
+  transition: border-color .15s ease, box-shadow .15s ease, color .15s ease;
+}
+
+.bot-difficulty-select:hover:not(:disabled),
+.bot-difficulty-select:focus {
+  border-color: var(--gold);
+  box-shadow: 0 0 0 1px rgba(201,162,39,.2), 0 0 14px rgba(201,162,39,.08);
+}
+
+.bot-difficulty-select:disabled {
+  opacity: .55;
+  cursor: not-allowed;
+}
+
+.bot-difficulty-select option {
+  background: #1a1208;
+  color: var(--cream);
+  font-family: 'Special Elite', monospace;
+}
+
 label { font-size: 12px; color: var(--text-dim); display: block; margin-bottom: 4px; letter-spacing: 1px; text-transform: uppercase; }
 
 /* ── CARDS / BOXES ───────────────────────────────────────────────────────── */

@@ -146,6 +146,15 @@ const Socket = {
     }));
   },
 
+  setAttentionLock(roomId, locked) {
+    return withSocketAck(() => new Promise((resolve, reject) => {
+      sock.emit('game:attentionLock', { roomId, locked }, (res) => {
+        if (res?.error) reject(new Error(res.error));
+        else resolve(res);
+      });
+    }));
+  },
+
   disconnectDecision(roomId, choice) {
     return withSocketAck(() => new Promise((resolve, reject) => {
       sock.emit('game:disconnectDecision', { roomId, choice }, (res) => {

@@ -708,7 +708,7 @@ const App = {
             <div class="section-title">Boty Testowe</div>
             <div style="margin-bottom:12px">
               <label for="room-bot-difficulty" class="text-dim" style="font-size:12px;display:block;margin-bottom:6px">Poziom Botów</label>
-              <select id="room-bot-difficulty" class="input" onchange="App.setRoomBotDifficulty(this.value)" style="max-width:220px">
+              <select id="room-bot-difficulty" class="bot-difficulty-select" onchange="App.setRoomBotDifficulty(this.value)" style="max-width:220px">
                 <option value="easy" ${botDifficulty === 'easy' ? 'selected' : ''}>Latwy</option>
                 <option value="medium" ${botDifficulty === 'medium' ? 'selected' : ''}>Sredni</option>
                 <option value="hard" ${botDifficulty === 'hard' ? 'selected' : ''}>Trudny</option>

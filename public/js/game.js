@@ -19,6 +19,7 @@ const Game = {
   pendingVoteChoice: null,
   lastVoteTapAt: 0,
   lastVoteTapChoice: null,
+  attentionLocks: new Set(),
 
   sameId(a, b) {
     return String(a) === String(b);
@@ -48,6 +49,9 @@ const Game = {
   },
 
   reset() {
+    if (this.roomId && this.attentionLocks.size > 0) {
+      Socket.setAttentionLock(this.roomId, false).catch(() => {});
+    }
     if (this.roleRevealTimer) clearTimeout(this.roleRevealTimer);
     if (this.disconnectTicker) clearInterval(this.disconnectTicker);
     this.state = null;
@@ -67,12 +71,17 @@ const Game = {
     this.pendingVoteChoice = null;
     this.lastVoteTapAt = 0;
     this.lastVoteTapChoice = null;
+    this.attentionLocks = new Set();
   },
 
   // ── SOCKET EVENTS ──────────────────────────────────────────────────────────
   onState(state) {
     const prevState = this.state;
     this.state = state;
+    if (state?.winner && this.roomId && this.attentionLocks.size > 0) {
+      this.attentionLocks.clear();
+      Socket.setAttentionLock(this.roomId, false).catch(() => {});
+    }
     if (state?.phase !== 'vote' || state?.myVote) this.pendingVoteChoice = null;
     if (!state?.pendingClaim) this.activeClaimPrompt = null;
     this.render();
@@ -90,6 +99,34 @@ const Game = {
   onInvestigate(result) {
     this.investigateResult = result;
     this.showInvestigateModal(result);
+  },
+
+  shouldUseAttentionLock() {
+    if (!this.roomId || !this.state || this.state.winner) return false;
+    return (this.state.players || []).some((player) => String(player.id || '').startsWith('bot:'));
+  },
+
+  async syncAttentionLock() {
+    if (!this.shouldUseAttentionLock()) return;
+    try {
+      await Socket.setAttentionLock(this.roomId, this.attentionLocks.size > 0);
+    } catch (_) {
+      // Best-effort UX lock; game flow still works without surfacing a secondary alert here.
+    }
+  },
+
+  holdAttentionLock(key) {
+    if (!key || !this.shouldUseAttentionLock()) return;
+    const wasLocked = this.attentionLocks.size > 0;
+    this.attentionLocks.add(key);
+    if (!wasLocked) this.syncAttentionLock();
+  },
+
+  releaseAttentionLock(key) {
+    if (!key) return;
+    const wasLocked = this.attentionLocks.size > 0;
+    this.attentionLocks.delete(key);
+    if (wasLocked && this.attentionLocks.size === 0) this.syncAttentionLock();
   },
 
   // ── GŁÓWNY RENDER ──────────────────────────────────────────────────────────
@@ -805,6 +842,7 @@ const Game = {
       }
     }
 
+    this.holdAttentionLock('role');
     UI.showModal({
       title: 'Twoja Rola',
       content: `
@@ -814,12 +852,14 @@ const Game = {
           <div class="role-info">${info}</div>
         </div>
       `,
-      actions: `<button class="btn btn-gold btn-full" onclick="UI.closeModal()">Rozumiem — grajmy!</button>`,
+      actions: `<button class="btn btn-gold btn-full" onclick="Game.closeBlockingInfoModal('role')">Rozumiem — grajmy!</button>`,
+      onClose: () => this.releaseAttentionLock('role'),
     });
   },
 
   showPeekModal(cards) {
     const cardHtml = cards.map(c => `<div class="hand-card ${c}" style="cursor:default">${c}</div>`).join('');
+    this.holdAttentionLock('peek');
     UI.showModal({
       title: '👁️ Podgląd Ustaw',
       content: `
@@ -827,12 +867,14 @@ const Game = {
         <div class="hand-cards">${cardHtml}</div>
         <p class="text-dim italic" style="font-size:12px;margin-top:12px">Możesz powiedzieć reszcie co widziałeś (lub skłamać!).<br>Kolejność kart pozostaje tajna.</p>
       `,
-      actions: `<button class="btn btn-gold btn-full" onclick="UI.closeModal(); Game.action('finishPeek')">Zamknij i kontynuuj</button>`,
+      actions: `<button class="btn btn-gold btn-full" onclick="Game.finishPeekModal()">Zamknij i kontynuuj</button>`,
+      onClose: () => this.releaseAttentionLock('peek'),
     });
   },
 
   showInvestigateModal(result) {
     const isLib = result.party === 'Liberal';
+    this.holdAttentionLock('investigate');
     UI.showModal({
       title: '🔍 Wynik Śledztwa',
       content: `
@@ -845,7 +887,8 @@ const Game = {
           Pamiętaj: karta przynależności nie zdradza czy ktoś jest Hitlerem.
         </p>
       `,
-      actions: `<button class="btn btn-gold btn-full" onclick="UI.closeModal()">Zamknij (tylko ty widziałeś)</button>`,
+      actions: `<button class="btn btn-gold btn-full" onclick="Game.closeBlockingInfoModal('investigate')">Zamknij (tylko ty widziałeś)</button>`,
+      onClose: () => this.releaseAttentionLock('investigate'),
     });
   },
 
@@ -1026,6 +1069,7 @@ const Game = {
     const modal = this.eventModalQueue.shift();
     if (!modal) return;
     this.eventModalPending = true;
+    this.holdAttentionLock('event-queue');
 
     UI.showModal({
       title: modal.title,
@@ -1038,7 +1082,23 @@ const Game = {
   closeEventModal() {
     UI.closeModal();
     this.eventModalPending = false;
+    if (this.eventModalQueue.length > 0) {
+      setTimeout(() => this.flushEventModalQueue(), 50);
+      return;
+    }
+    this.releaseAttentionLock('event-queue');
     setTimeout(() => this.flushEventModalQueue(), 50);
+  },
+
+  closeBlockingInfoModal(lockKey) {
+    UI.closeModal();
+    this.releaseAttentionLock(lockKey);
+  },
+
+  async finishPeekModal() {
+    UI.closeModal();
+    this.releaseAttentionLock('peek');
+    await this.action('finishPeek');
   },
 
   getPendingClaimKey(claim = this.state?.pendingClaim) {

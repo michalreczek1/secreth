@@ -491,6 +491,7 @@ function ensureGameMetaState(state) {
   if (!state.botControlled || typeof state.botControlled !== 'object') state.botControlled = {};
   if (!Object.prototype.hasOwnProperty.call(state, 'disconnectControl')) state.disconnectControl = null;
   if (!Object.prototype.hasOwnProperty.call(state, 'endVoteControl')) state.endVoteControl = null;
+  if (!Object.prototype.hasOwnProperty.call(state, 'attentionLock')) state.attentionLock = null;
   if (!Object.prototype.hasOwnProperty.call(state, 'botDifficulty')) state.botDifficulty = 'medium';
   state.botDifficulty = botAI.normalizeDifficulty(state.botDifficulty);
   botAI.ensureBotMemoryState(state);
@@ -517,6 +518,15 @@ function isEndVoteActive(state) {
 
 function isGamePauseActive(state) {
   return isDisconnectPauseActive(state) || isEndVoteActive(state);
+}
+
+function hasActiveAttentionLock(roomId) {
+  const state = activeGames.get(roomId)?.state;
+  const lock = state?.attentionLock;
+  if (!lock?.userId) return false;
+  const player = state.players?.find((entry) => entry.id === lock.userId);
+  if (!player || player.dead || player.connected === false || state.botControlled?.[lock.userId]) return false;
+  return true;
 }
 
 function hasPendingHumanClaim(roomId) {
@@ -548,8 +558,38 @@ function shouldBotsPlay(roomId) {
     && !!ag
     && ag.state.phase !== 'end'
     && !isGamePauseActive(ag.state)
+    && !hasActiveAttentionLock(roomId)
     && !hasPendingHumanClaim(roomId)
     && hasConnectedHumanInGame(roomId);
+}
+
+async function setAttentionLock(roomId, userId, username, locked) {
+  const ag = activeGames.get(roomId);
+  if (!ag?.state) throw new Error('Brak aktywnej gry');
+  const state = ensureGameMetaState(ag.state);
+  const player = state.players.find((entry) => entry.id === userId);
+  if (!player || isBotId(player.id) || state.botControlled?.[userId] || player.connected === false) {
+    throw new Error('Nie możesz sterować blokadą uwagi');
+  }
+
+  if (locked) {
+    state.attentionLock = {
+      userId,
+      username,
+      lockedAt: new Date().toISOString(),
+    };
+    ag.state = state;
+    clearBotTimer(roomId);
+    await persistActiveGameState(roomId);
+    return;
+  }
+
+  if (!state.attentionLock || state.attentionLock.userId === userId) {
+    state.attentionLock = null;
+    ag.state = state;
+    await persistActiveGameState(roomId);
+    if (shouldBotsPlay(roomId)) scheduleBots(roomId, 700);
+  }
 }
 
 function pickBotName(existingNames) {
@@ -1185,6 +1225,18 @@ io.on('connection', async (socket) => {
     }
   });
 
+  socket.on('game:attentionLock', async ({ roomId, locked }, callback) => {
+    const trace = createSocketTrace(socket, 'game:attentionLock', { userId, username, roomId, locked: !!locked });
+    try {
+      if (!(await ensureSocketUserActive(callback))) return;
+      await setAttentionLock(roomId, userId, username, !!locked);
+      callback?.({ ok: true });
+    } catch (e) {
+      logger.error('game.attention_lock.failed', { error: e, ...trace });
+      callbackError(callback, e.message, trace);
+    }
+  });
+
   socket.on('game:disconnectDecision', async ({ roomId, choice }, callback) => {
     const trace = createSocketTrace(socket, 'game:disconnectDecision', { userId, username, roomId, choice });
     try {
@@ -1251,6 +1303,7 @@ io.on('connection', async (socket) => {
           const remainingSockets = removePlayerSocket(ag, su.userId, socket.id);
           if (remainingSockets.length === 0) {
             p.connected = false;
+            if (ag.state.attentionLock?.userId === su.userId) ag.state.attentionLock = null;
             const endVoteFinished = await reconcileEndVoteControl(su.roomId);
             if (endVoteFinished) {
               socketUsers.delete(socket.id);
@@ -1938,6 +1991,7 @@ async function restoreActiveGames() {
       if (!state || !Array.isArray(state.players)) throw new Error('Invalid state');
       ensureGameMetaState(state);
       state.disconnectControl = null;
+      state.attentionLock = null;
       state.players = state.players.map(p => ({ ...p, connected: false }));
       for (const player of state.players) {
         if (isBotId(player.id)) registerBot(room._id, player.id);

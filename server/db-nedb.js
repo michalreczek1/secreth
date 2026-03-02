@@ -17,7 +17,11 @@ function createNedbStore({ dataDir }) {
 
   function mapRoom(room) {
     if (!room) return null;
-    return { ...room, botDifficulty: room.botDifficulty || 'medium' };
+    return {
+      ...room,
+      botDifficulty: room.botDifficulty || 'medium',
+      botSpeed: room.botSpeed || 'normal',
+    };
   }
 
   const store = {
@@ -56,11 +60,13 @@ function createNedbStore({ dataDir }) {
         ownerName,
         state: options.state || 'lobby',
         botDifficulty: options.botDifficulty || 'medium',
+        botSpeed: options.botSpeed || 'normal',
         gameData: options.gameData ?? null,
         createdAt: options.createdAt || new Date().toISOString(),
       }),
       setState: (id, state, gameData) => rooms.updateAsync({ _id: id }, { $set: { state, gameData } }, {}),
       setBotDifficulty: (id, botDifficulty) => rooms.updateAsync({ _id: id }, { $set: { botDifficulty } }, {}),
+      setBotSpeed: (id, botSpeed) => rooms.updateAsync({ _id: id }, { $set: { botSpeed } }, {}),
       delete: (id) => rooms.removeAsync({ _id: id }, {}),
     },
 

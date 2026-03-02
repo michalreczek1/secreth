@@ -52,17 +52,29 @@ async function main() {
     await page.fill('#room-name-input', 'Playwright Room');
     await page.evaluate(() => App.createRoom());
 
-    await page.waitForFunction(() => typeof App !== 'undefined' && App.currentRoomId && document.querySelector('#room-bot-difficulty'));
+    await page.waitForFunction(() => (
+      typeof App !== 'undefined'
+      && App.currentRoomId
+      && document.querySelector('#room-bot-difficulty')
+      && document.querySelector('#room-bot-speed')
+    ));
     await page.selectOption('#room-bot-difficulty', 'hard');
     await page.waitForFunction(() => document.querySelector('#room-bot-difficulty')?.value === 'hard');
-
-    await page.click('#room-add-bot-btn');
-    await page.waitForFunction(() => {
-      const el = document.querySelector('#bot-count-display');
-      return el && Number(el.textContent) >= 1;
+    await page.selectOption('#room-bot-speed', 'slow');
+    await page.waitForFunction(() => document.querySelector('#room-bot-speed')?.value === 'slow');
+    await page.reload({ waitUntil: 'networkidle' });
+    await page.waitForFunction(() => typeof App !== 'undefined' && Array.isArray(App.rooms) && App.rooms.length > 0);
+    await page.evaluate(() => {
+      const room = App.rooms.find((item) => item.name === 'Playwright Room');
+      if (!room) throw new Error('room not found after reload');
+      return App.showRoom(room.id);
     });
+    await page.waitForFunction(() => (
+      document.querySelector('#room-bot-difficulty')?.value === 'hard'
+      && document.querySelector('#room-bot-speed')?.value === 'slow'
+    ));
 
-    console.log('PLAYWRIGHT_ROOM_BOT_DIFFICULTY_SMOKE_OK');
+    console.log('PLAYWRIGHT_ROOM_BOT_SETTINGS_SMOKE_OK');
   } finally {
     await browser.close();
     stopServer(server);

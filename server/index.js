@@ -98,6 +98,91 @@ const BOT_NAMES = [
   'Ingrid', 'Helmut', 'Lotte', 'Fritz', 'Karl',
 ];
 
+const BOT_SPEEDS = ['fast', 'normal', 'slow'];
+const BOT_SPEED_PROFILES = {
+  fast: {
+    nominate: [550, 900],
+    vote: [450, 800],
+    presidentDiscard: [700, 1050],
+    chancellorDiscard: [750, 1100],
+    proposeVeto: [850, 1200],
+    respondVeto: [800, 1200],
+    investigate: [950, 1400],
+    specialElection: [1050, 1500],
+    execute: [1100, 1600],
+    peekPolicies: [850, 1200],
+    finishPeek: [850, 1200],
+    claim: [900, 1300],
+    default: [700, 1000],
+  },
+  normal: {
+    nominate: [1100, 1700],
+    vote: [850, 1400],
+    presidentDiscard: [1300, 1900],
+    chancellorDiscard: [1400, 2000],
+    proposeVeto: [1450, 2100],
+    respondVeto: [1400, 2100],
+    investigate: [1550, 2250],
+    specialElection: [1650, 2350],
+    execute: [1700, 2450],
+    peekPolicies: [1350, 1950],
+    finishPeek: [1200, 1800],
+    claim: [1450, 2100],
+    default: [1200, 1800],
+  },
+  slow: {
+    nominate: [1700, 2600],
+    vote: [1350, 2200],
+    presidentDiscard: [1900, 2850],
+    chancellorDiscard: [2000, 2950],
+    proposeVeto: [2050, 3050],
+    respondVeto: [2050, 3050],
+    investigate: [2200, 3200],
+    specialElection: [2300, 3350],
+    execute: [2400, 3450],
+    peekPolicies: [1900, 2800],
+    finishPeek: [1700, 2550],
+    claim: [2000, 3000],
+    default: [1800, 2600],
+  },
+};
+
+function isValidBotSpeed(value) {
+  return BOT_SPEEDS.includes(value);
+}
+
+function normalizeBotSpeed(value) {
+  return isValidBotSpeed(value) ? value : 'normal';
+}
+
+function getBotActionDelay(roomId, action = 'default') {
+  const state = activeGames.get(roomId)?.state;
+  const speed = normalizeBotSpeed(state?.botSpeed);
+  const profile = BOT_SPEED_PROFILES[speed] || BOT_SPEED_PROFILES.normal;
+  const range = profile[action] || profile.default;
+  const [min, max] = range;
+  return min + Math.floor(Math.random() * (max - min + 1));
+}
+
+function inferBotDelayAction(state) {
+  if (!state) return 'default';
+  switch (state.phase) {
+    case 'nominate': return 'nominate';
+    case 'vote': return 'vote';
+    case 'presidentDiscard': return 'presidentDiscard';
+    case 'chancellorDiscard': return 'chancellorDiscard';
+    case 'veto': return 'respondVeto';
+    case 'executive':
+      if (state.execPower === 'peekPolicies') return 'peekPolicies';
+      if (state.execPower === 'investigate') return 'investigate';
+      if (state.execPower === 'specialElection') return 'specialElection';
+      if (state.execPower === 'execute') return 'execute';
+      return 'default';
+    case 'executiveDone': return 'finishPeek';
+    default: return 'default';
+  }
+}
+
 function normalizeUsernameKey(username) {
   return String(username || '').trim().toLowerCase();
 }
@@ -338,6 +423,7 @@ async function startGameForRoom(roomId, initiatedByUsername = 'System') {
   const playerList = players.map((p) => ({ id: p.userId, username: p.username }));
   const state = ensureGameMetaState(game.createGame(playerList));
   state.botDifficulty = botAI.normalizeDifficulty(room.botDifficulty || 'medium');
+  state.botSpeed = normalizeBotSpeed(room.botSpeed || 'normal');
   botAI.ensureBotMemoryState(state);
 
   const ag = { state, playerSockets: {} };
@@ -366,7 +452,7 @@ async function startGameForRoom(roomId, initiatedByUsername = 'System') {
     roomId,
   });
 
-  if (shouldBotsPlay(roomId)) scheduleBots(roomId, 900);
+  if (shouldBotsPlay(roomId)) scheduleBots(roomId);
 }
 
 async function syncRoomStartConfirmation(roomId) {
@@ -493,7 +579,9 @@ function ensureGameMetaState(state) {
   if (!Object.prototype.hasOwnProperty.call(state, 'endVoteControl')) state.endVoteControl = null;
   if (!Object.prototype.hasOwnProperty.call(state, 'attentionLock')) state.attentionLock = null;
   if (!Object.prototype.hasOwnProperty.call(state, 'botDifficulty')) state.botDifficulty = 'medium';
+  if (!Object.prototype.hasOwnProperty.call(state, 'botSpeed')) state.botSpeed = 'normal';
   state.botDifficulty = botAI.normalizeDifficulty(state.botDifficulty);
+  state.botSpeed = normalizeBotSpeed(state.botSpeed);
   botAI.ensureBotMemoryState(state);
   return state;
 }
@@ -588,7 +676,7 @@ async function setAttentionLock(roomId, userId, username, locked) {
     state.attentionLock = null;
     ag.state = state;
     await persistActiveGameState(roomId);
-    if (shouldBotsPlay(roomId)) scheduleBots(roomId, 700);
+    if (shouldBotsPlay(roomId)) scheduleBots(roomId);
   }
 }
 
@@ -638,6 +726,7 @@ async function getUserActiveRoom(userId) {
     ownerName: room.ownerName,
     state: room.state,
     botDifficulty: room.botDifficulty || 'medium',
+    botSpeed: room.botSpeed || 'normal',
   };
 }
 
@@ -822,6 +911,7 @@ app.get('/api/rooms', requireAuth, async (req, res) => {
         ownerId: r.ownerId,
         state: r.state,
         botDifficulty: botAI.normalizeDifficulty(r.botDifficulty || 'medium'),
+        botSpeed: normalizeBotSpeed(r.botSpeed || 'normal'),
         playerCount: count,
         createdAt: r.createdAt,
       };
@@ -838,7 +928,7 @@ app.post('/api/rooms', requireAuth, async (req, res) => {
     const { name } = req.body;
     if (!name || name.length < 2 || name.length > 40) return res.status(400).json({ error: 'Nazwa 2-40 znaków' });
     const id = uuidv4().substring(0, 8).toUpperCase();
-    await db.rooms.create(id, name, req.session.userId, req.session.username, { botDifficulty: 'medium' });
+    await db.rooms.create(id, name, req.session.userId, req.session.username, { botDifficulty: 'medium', botSpeed: 'normal' });
     await db.roomPlayers.add(id, req.session.userId, req.session.username);
     const room = await db.rooms.findById(id);
     io.emit('rooms:updated');
@@ -948,6 +1038,27 @@ app.post('/api/rooms/:id/bot-difficulty', requireAuth, async (req, res) => {
     res.json({ ok: true, difficulty });
   } catch (e) {
     logger.error('rooms.bot_difficulty.failed', { error: e, roomId: req.params?.id, ...getRequestMeta(req) });
+    jsonError(res, 500, 'Błąd serwera');
+  }
+});
+
+app.post('/api/rooms/:id/bot-speed', requireAuth, async (req, res) => {
+  try {
+    const room = await db.rooms.findById(req.params.id);
+    if (!room) return res.status(404).json({ error: 'Pokój nie istnieje' });
+    if (room.state !== 'lobby') return res.status(400).json({ error: 'Tempo botów można zmieniać tylko w lobby' });
+    if (room.ownerId !== req.session.userId && !req.session.isAdmin) {
+      return res.status(403).json({ error: 'Brak uprawnień' });
+    }
+    if (!isValidBotSpeed(req.body?.speed)) {
+      return res.status(400).json({ error: 'Nieprawidłowe tempo botów' });
+    }
+    const speed = req.body.speed;
+    await db.rooms.setBotSpeed(req.params.id, speed);
+    io.emit('rooms:updated');
+    res.json({ ok: true, speed });
+  } catch (e) {
+    logger.error('rooms.bot_speed.failed', { error: e, roomId: req.params?.id, ...getRequestMeta(req) });
     jsonError(res, 500, 'Błąd serwera');
   }
 });
@@ -1066,7 +1177,7 @@ io.on('connection', async (socket) => {
 
       const updatedPlayers = await emitRoomPlayers(roomId);
       emitRoomStartConfirmation(roomId);
-      if (shouldBotsPlay(roomId)) scheduleBots(roomId, 700);
+      if (shouldBotsPlay(roomId)) scheduleBots(roomId);
 
       // Historia czatu pokoju
       const history = await db.messages.getRoom(roomId);
@@ -1205,7 +1316,7 @@ io.on('connection', async (socket) => {
     try {
       if (!(await ensureSocketUserActive(callback))) return;
       await processGameAction(roomId, userId, action, payload);
-      if (shouldBotsPlay(roomId)) scheduleBots(roomId, 700);
+      if (shouldBotsPlay(roomId)) scheduleBots(roomId);
       callback?.({ ok: true });
     } catch (e) {
       logger.error('game.action.failed', { error: e, ...trace });
@@ -1559,7 +1670,7 @@ async function respondEndGameVote(roomId, userId, accept) {
     await persistActiveGameState(roomId);
     broadcastGameState(roomId);
     await emitSystemRoomMessage(roomId, `▶️ ${player.username} odrzucił zakończenie gry. Partia trwa dalej.`);
-    if (shouldBotsPlay(roomId)) scheduleBots(roomId, 700);
+    if (shouldBotsPlay(roomId)) scheduleBots(roomId);
     return;
   }
 
@@ -1694,7 +1805,7 @@ async function resolveDisconnectChoice(roomId, choice, context = {}) {
     await persistActiveGameState(roomId);
     broadcastGameState(roomId);
     await emitSystemRoomMessage(roomId, `🤖 Bot przejmuje kontrolę nad graczem ${targetUsername}.`);
-    if (shouldBotsPlay(roomId)) scheduleBots(roomId, 700);
+    if (shouldBotsPlay(roomId)) scheduleBots(roomId);
     return;
   }
 
@@ -1792,7 +1903,7 @@ function broadcastGameState(roomId) {
   for (const player of ag.state.players) {
     emitToPlayerSockets(ag, player.id, 'game:state', buildGameView(roomId, player.id));
   }
-  if (shouldBotsPlay(roomId)) scheduleBots(roomId, 500);
+  if (shouldBotsPlay(roomId)) scheduleBots(roomId);
 }
 
 async function processGameAction(roomId, userId, action, payload = {}) {
@@ -1866,12 +1977,13 @@ async function processGameAction(roomId, userId, action, payload = {}) {
   return { ok: true };
 }
 
-function scheduleBots(roomId, delay = 600) {
+function scheduleBots(roomId, delay = null) {
   if (!shouldBotsPlay(roomId)) return;
   clearBotTimer(roomId);
+  const actualDelay = delay ?? getBotActionDelay(roomId, inferBotDelayAction(activeGames.get(roomId)?.state));
   roomBotTimers.set(roomId, setTimeout(() => {
     runBotTurn(roomId).catch((e) => logger.error('bot.turn.failed', { error: e, roomId }));
-  }, delay));
+  }, actualDelay));
 }
 
 async function runBotTurn(roomId) {
@@ -1958,7 +2070,7 @@ async function runBotTurn(roomId) {
       break;
   }
 
-  if (shouldBotsPlay(roomId)) scheduleBots(roomId, 500);
+  if (shouldBotsPlay(roomId)) scheduleBots(roomId);
 }
 
 async function restoreActiveGames() {

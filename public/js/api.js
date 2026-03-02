@@ -39,6 +39,7 @@ const API = {
   createRoom: (name) => API.post('/api/rooms', { name }),
   deleteRoom: (id) => API.delete(`/api/rooms/${id}`),
   setRoomBotDifficulty: (id, difficulty) => API.post(`/api/rooms/${id}/bot-difficulty`, { difficulty }),
+  setRoomBotSpeed: (id, speed) => API.post(`/api/rooms/${id}/bot-speed`, { speed }),
   addRoomBots: (id, count = 1) => API.post(`/api/rooms/${id}/bots`, { count }),
   fillRoomBots: (id, fillTo = 5) => API.post(`/api/rooms/${id}/bots`, { fillTo }),
   removeRoomBots: (id) => API.delete(`/api/rooms/${id}/bots`),

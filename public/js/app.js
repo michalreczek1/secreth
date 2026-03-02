@@ -681,6 +681,7 @@ const App = {
     const isOwner = room.ownerId === this.currentUser.id;
     const canManageBots = room.state === 'lobby' && (isOwner || this.currentUser?.isAdmin);
     const botDifficulty = room.botDifficulty || 'medium';
+    const botSpeed = room.botSpeed || 'normal';
 
     el.innerHTML = `
       <div class="page-shell page-shell-room">
@@ -712,6 +713,14 @@ const App = {
                 <option value="easy" ${botDifficulty === 'easy' ? 'selected' : ''}>Latwy</option>
                 <option value="medium" ${botDifficulty === 'medium' ? 'selected' : ''}>Sredni</option>
                 <option value="hard" ${botDifficulty === 'hard' ? 'selected' : ''}>Trudny</option>
+              </select>
+            </div>
+            <div style="margin-bottom:12px">
+              <label for="room-bot-speed" class="text-dim" style="font-size:12px;display:block;margin-bottom:6px">Tempo Botów</label>
+              <select id="room-bot-speed" class="bot-difficulty-select" onchange="App.setRoomBotSpeed(this.value)" style="max-width:220px">
+                <option value="fast" ${botSpeed === 'fast' ? 'selected' : ''}>Szybkie</option>
+                <option value="normal" ${botSpeed === 'normal' ? 'selected' : ''}>Normalne</option>
+                <option value="slow" ${botSpeed === 'slow' ? 'selected' : ''}>Wolne</option>
               </select>
             </div>
             <div class="text-dim" style="font-size:12px">
@@ -885,6 +894,22 @@ const App = {
     }
     const room = this.rooms.find((item) => item.id === this.currentRoomId);
     if (room) room.botDifficulty = res.difficulty;
+    await this.showRoom(this.currentRoomId);
+  },
+
+  async setRoomBotSpeed(speed) {
+    if (!this.currentRoomId || this.currentRoomState !== 'lobby') return;
+    const select = document.getElementById('room-bot-speed');
+    if (select) select.disabled = true;
+    const res = await API.setRoomBotSpeed(this.currentRoomId, speed);
+    if (select) select.disabled = false;
+    if (res?.error) {
+      alert(res.error);
+      await this.showRoom(this.currentRoomId);
+      return;
+    }
+    const room = this.rooms.find((item) => item.id === this.currentRoomId);
+    if (room) room.botSpeed = res.speed;
     await this.showRoom(this.currentRoomId);
   },
 

@@ -1531,7 +1531,7 @@ label { font-size: 12px; color: var(--text-dim); display: block; margin-bottom: 
     padding: 10px;
   }
   .claim-history-row {
-    grid-template-columns: 74px minmax(0, 1fr) auto;
+    grid-template-columns: 82px minmax(0, 1fr) auto;
     grid-template-areas: "role name value";
     gap: 8px;
     align-items: center;
@@ -1540,7 +1540,7 @@ label { font-size: 12px; color: var(--text-dim); display: block; margin-bottom: 
     justify-content: flex-end;
   }
   .claim-history-preview-line {
-    grid-template-columns: 74px minmax(0, 1fr) auto;
+    grid-template-columns: 82px minmax(0, 1fr) auto;
     grid-template-areas: "role name value";
     gap: 8px;
     align-items: center;

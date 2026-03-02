@@ -640,6 +640,7 @@ const App = {
 
   async showRoom(roomId, resetToLobby = false) {
     const rooms = await API.getRooms();
+    this.rooms = Array.isArray(rooms) ? rooms : this.rooms;
     const room = rooms.find(r => r.id === roomId);
     if (!room) {
       this.clearActiveRoom();
@@ -679,6 +680,7 @@ const App = {
     const botCount = players.filter(p => typeof p.id === 'string' && p.id.startsWith('bot:')).length;
     const isOwner = room.ownerId === this.currentUser.id;
     const canManageBots = room.state === 'lobby' && (isOwner || this.currentUser?.isAdmin);
+    const botDifficulty = room.botDifficulty || 'medium';
 
     el.innerHTML = `
       <div class="page-shell page-shell-room">
@@ -704,6 +706,14 @@ const App = {
         ${canManageBots ? `
           <div class="box" style="margin-top:12px">
             <div class="section-title">Boty Testowe</div>
+            <div style="margin-bottom:12px">
+              <label for="room-bot-difficulty" class="text-dim" style="font-size:12px;display:block;margin-bottom:6px">Poziom Botów</label>
+              <select id="room-bot-difficulty" class="input" onchange="App.setRoomBotDifficulty(this.value)" style="max-width:220px">
+                <option value="easy" ${botDifficulty === 'easy' ? 'selected' : ''}>Latwy</option>
+                <option value="medium" ${botDifficulty === 'medium' ? 'selected' : ''}>Sredni</option>
+                <option value="hard" ${botDifficulty === 'hard' ? 'selected' : ''}>Trudny</option>
+              </select>
+            </div>
             <div class="text-dim" style="font-size:12px">
               Boty w pokoju: <strong id="bot-count-display">${players.length > 0 ? botCount : effectiveCount === 0 ? 0 : '...'}</strong> · Łącznie graczy: <strong id="room-total-count-display">${effectiveCount}</strong>/10
             </div>
@@ -713,7 +723,7 @@ const App = {
               <button id="room-remove-bots-btn" class="btn btn-danger btn-sm" ${players.length > 0 && botCount === 0 ? 'disabled' : ''} onclick="App.removeBots()">Usuń boty</button>
             </div>
             <div class="text-dim" style="font-size:12px;margin-top:10px">
-              Boty działają tylko w lobby i po starcie wykonują ruchy automatycznie.
+              Boty działają tylko w lobby i po starcie wykonują ruchy automatycznie zgodnie z wybranym poziomem.
             </div>
           </div>
         ` : ''}
@@ -859,6 +869,22 @@ const App = {
     if (!this.currentRoomId) return;
     const res = await API.addRoomBots(this.currentRoomId, count);
     if (res.error) return alert(res.error);
+    await this.showRoom(this.currentRoomId);
+  },
+
+  async setRoomBotDifficulty(difficulty) {
+    if (!this.currentRoomId || this.currentRoomState !== 'lobby') return;
+    const select = document.getElementById('room-bot-difficulty');
+    if (select) select.disabled = true;
+    const res = await API.setRoomBotDifficulty(this.currentRoomId, difficulty);
+    if (select) select.disabled = false;
+    if (res?.error) {
+      alert(res.error);
+      await this.showRoom(this.currentRoomId);
+      return;
+    }
+    const room = this.rooms.find((item) => item.id === this.currentRoomId);
+    if (room) room.botDifficulty = res.difficulty;
     await this.showRoom(this.currentRoomId);
   },
 

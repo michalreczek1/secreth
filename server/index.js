@@ -12,6 +12,7 @@ const fs         = require('fs');
 const { db }   = require('./db');
 const game     = require('./game');
 const logger   = require('./logger');
+const botAI    = require('./bot-ai');
 
 const app    = express();
 const server = http.createServer(app);
@@ -336,6 +337,8 @@ async function startGameForRoom(roomId, initiatedByUsername = 'System') {
 
   const playerList = players.map((p) => ({ id: p.userId, username: p.username }));
   const state = ensureGameMetaState(game.createGame(playerList));
+  state.botDifficulty = botAI.normalizeDifficulty(room.botDifficulty || 'medium');
+  botAI.ensureBotMemoryState(state);
 
   const ag = { state, playerSockets: {} };
   for (const [sid, su] of socketUsers.entries()) {
@@ -488,6 +491,9 @@ function ensureGameMetaState(state) {
   if (!state.botControlled || typeof state.botControlled !== 'object') state.botControlled = {};
   if (!Object.prototype.hasOwnProperty.call(state, 'disconnectControl')) state.disconnectControl = null;
   if (!Object.prototype.hasOwnProperty.call(state, 'endVoteControl')) state.endVoteControl = null;
+  if (!Object.prototype.hasOwnProperty.call(state, 'botDifficulty')) state.botDifficulty = 'medium';
+  state.botDifficulty = botAI.normalizeDifficulty(state.botDifficulty);
+  botAI.ensureBotMemoryState(state);
   return state;
 }
 
@@ -591,6 +597,7 @@ async function getUserActiveRoom(userId) {
     ownerId: room.ownerId,
     ownerName: room.ownerName,
     state: room.state,
+    botDifficulty: room.botDifficulty || 'medium',
   };
 }
 
@@ -768,7 +775,16 @@ app.get('/api/rooms', requireAuth, async (req, res) => {
     const allRooms = await db.rooms.findAll();
     const result = await Promise.all(allRooms.map(async r => {
       const count = await db.roomPlayers.countInRoom(r._id);
-      return { id: r._id, name: r.name, ownerName: r.ownerName, ownerId: r.ownerId, state: r.state, playerCount: count, createdAt: r.createdAt };
+      return {
+        id: r._id,
+        name: r.name,
+        ownerName: r.ownerName,
+        ownerId: r.ownerId,
+        state: r.state,
+        botDifficulty: botAI.normalizeDifficulty(r.botDifficulty || 'medium'),
+        playerCount: count,
+        createdAt: r.createdAt,
+      };
     }));
     res.json(result);
   } catch (e) {
@@ -782,7 +798,7 @@ app.post('/api/rooms', requireAuth, async (req, res) => {
     const { name } = req.body;
     if (!name || name.length < 2 || name.length > 40) return res.status(400).json({ error: 'Nazwa 2-40 znaków' });
     const id = uuidv4().substring(0, 8).toUpperCase();
-    await db.rooms.create(id, name, req.session.userId, req.session.username);
+    await db.rooms.create(id, name, req.session.userId, req.session.username, { botDifficulty: 'medium' });
     await db.roomPlayers.add(id, req.session.userId, req.session.username);
     const room = await db.rooms.findById(id);
     io.emit('rooms:updated');
@@ -871,6 +887,24 @@ app.delete('/api/rooms/:id/bots', requireAuth, async (req, res) => {
     res.json({ ok: true, removed: bots.length });
   } catch (e) {
     logger.error('rooms.bots.remove.failed', { error: e, roomId: req.params?.id, ...getRequestMeta(req) });
+    jsonError(res, 500, 'Błąd serwera');
+  }
+});
+
+app.post('/api/rooms/:id/bot-difficulty', requireAuth, async (req, res) => {
+  try {
+    const room = await db.rooms.findById(req.params.id);
+    if (!room) return res.status(404).json({ error: 'Pokój nie istnieje' });
+    if (room.state !== 'lobby') return res.status(400).json({ error: 'Poziom botów można zmieniać tylko w lobby' });
+    if (room.ownerId !== req.session.userId && !req.session.isAdmin) {
+      return res.status(403).json({ error: 'Brak uprawnień' });
+    }
+    const difficulty = botAI.normalizeDifficulty(req.body?.difficulty);
+    await db.rooms.setBotDifficulty(req.params.id, difficulty);
+    io.emit('rooms:updated');
+    res.json({ ok: true, difficulty });
+  } catch (e) {
+    logger.error('rooms.bot_difficulty.failed', { error: e, roomId: req.params?.id, ...getRequestMeta(req) });
     jsonError(res, 500, 'Błąd serwera');
   }
 });
@@ -1498,6 +1532,7 @@ async function submitLegislativeClaim(roomId, userId, sessionId, summary, skippe
   const result = game.submitClaim(ag.state, userId, sessionId, summary, skipped);
   ag.state = result.state;
   ensureGameMetaState(ag.state);
+  botAI.updateMemoryFromTransition(null, ag.state, { action: 'claim', userId, roomId });
 
   await persistActiveGameState(roomId);
   broadcastGameState(roomId);
@@ -1519,10 +1554,18 @@ async function resolveReadyBotClaims(roomId) {
 
   for (const session of sessions) {
     if (session.presidentReady && !session.presidentSubmitted && automated.has(session.presidentId)) {
-      pending.push({ sessionId: session.sessionId, userId: session.presidentId, summary: session.presidentActual || 'LLF' });
+      pending.push({
+        sessionId: session.sessionId,
+        userId: session.presidentId,
+        summary: botAI.chooseClaim(ag.state, session.presidentId, session, ag.state.botDifficulty),
+      });
     }
     if (session.chancellorReady && !session.chancellorSubmitted && automated.has(session.chancellorId)) {
-      pending.push({ sessionId: session.sessionId, userId: session.chancellorId, summary: session.chancellorActual || 'LF' });
+      pending.push({
+        sessionId: session.sessionId,
+        userId: session.chancellorId,
+        summary: botAI.chooseClaim(ag.state, session.chancellorId, session, ag.state.botDifficulty),
+      });
     }
   }
 
@@ -1696,76 +1739,13 @@ function broadcastGameState(roomId) {
   if (shouldBotsPlay(roomId)) scheduleBots(roomId, 500);
 }
 
-function getEligibleBotChancellors(state) {
-  const aliveCount = state.players.filter(p => !p.dead).length;
-  return state.players
-    .map((p, i) => ({ ...p, i }))
-    .filter((p) => {
-      if (p.dead || p.i === state.presidentIdx) return false;
-      if (aliveCount > 5) {
-        if (p.i === state.prevPresidentIdx || p.i === state.prevChancellorIdx) return false;
-      } else if (p.i === state.prevChancellorIdx) {
-        return false;
-      }
-      return true;
-    });
-}
-
-function randomItem(items) {
-  if (!items.length) return null;
-  return items[Math.floor(Math.random() * items.length)];
-}
-
-function chooseBotVote(state, botId) {
-  const bot = state.players.find(p => p.id === botId);
-  if (!bot) return 'Nein';
-  if (state.players[state.presidentIdx]?.id === botId || state.players[state.chancellorIdx]?.id === botId) return 'Ja';
-
-  const government = [state.players[state.presidentIdx], state.players[state.chancellorIdx]].filter(Boolean);
-  const trusted = government.some(p => p.id === botId);
-  if (trusted) return 'Ja';
-
-  return Math.random() < 0.62 ? 'Ja' : 'Nein';
-}
-
-function chooseBotDiscard(cards, role, discardForLiberal) {
-  if (!cards?.length) return 0;
-  const preferred = discardForLiberal
-    ? cards.findIndex(c => c === 'F')
-    : cards.findIndex(c => c === 'L');
-  return preferred >= 0 ? preferred : 0;
-}
-
-function shouldBotProposeVeto(state, chancellor) {
-  if (!state?.canVeto && state?.fas < 5) return false;
-  if (!Array.isArray(state.hand) || state.hand.length !== 2 || !chancellor) return false;
-
-  const liberalCount = state.hand.filter(c => c === 'L').length;
-  const fascistCount = state.hand.filter(c => c === 'F').length;
-
-  if (chancellor.role === 'Liberal') return fascistCount === 2;
-  if (chancellor.role === 'Hitler') return liberalCount === 2 && Math.random() < 0.35;
-  return liberalCount === 2 && Math.random() < 0.6;
-}
-
-function chooseBotExecutiveTarget(state, mode) {
-  const candidates = state.players
-    .map((p, i) => ({ ...p, i }))
-    .filter(p => !p.dead && p.i !== state.presidentIdx);
-
-  if (mode === 'investigate') {
-    return randomItem(candidates.filter(p => !state.investigated[p.id]))?.i ?? null;
-  }
-
-  return randomItem(candidates)?.i ?? null;
-}
-
 async function processGameAction(roomId, userId, action, payload = {}) {
   const ag = activeGames.get(roomId);
   if (!ag) throw new Error('Brak aktywnej gry');
   ensureGameMetaState(ag.state);
   if (ag.state.phase === 'end') throw new Error('Gra się skończyła');
   if (isGamePauseActive(ag.state)) throw new Error('Gra jest tymczasowo wstrzymana');
+  const prevState = JSON.parse(JSON.stringify(ag.state));
 
   let newState;
   let extra = {};
@@ -1795,6 +1775,7 @@ async function processGameAction(roomId, userId, action, payload = {}) {
 
   ag.state = newState;
   ensureGameMetaState(ag.state);
+  botAI.updateMemoryFromTransition(prevState, ag.state, { action, userId, payload, roomId });
   const isFinished = newState.phase === 'end';
   const newRoomState = isFinished ? 'lobby' : 'playing';
   await db.rooms.setState(roomId, newRoomState, isFinished ? null : JSON.stringify(newState));
@@ -1850,7 +1831,7 @@ async function runBotTurn(roomId) {
     case 'nominate': {
       const president = state.players[state.presidentIdx];
       if (president && botIds.has(president.id)) {
-        const target = randomItem(getEligibleBotChancellors(state));
+        const target = botAI.chooseChancellorCandidate(state, president.id, state.botDifficulty);
         if (target) await processGameAction(roomId, president.id, 'nominate', { targetIdx: target.i });
       }
       break;
@@ -1861,14 +1842,14 @@ async function runBotTurn(roomId) {
         if (!state || state.phase !== 'vote') break;
         const pendingBot = state.players.find(p => !p.dead && botIds.has(p.id) && state.votes[p.id] === undefined);
         if (!pendingBot) break;
-        await processGameAction(roomId, pendingBot.id, 'vote', { choice: chooseBotVote(state, pendingBot.id) });
+        await processGameAction(roomId, pendingBot.id, 'vote', { choice: botAI.chooseVote(state, pendingBot.id, state.botDifficulty) });
       }
       break;
     }
     case 'presidentDiscard': {
       const president = state.players[state.presidentIdx];
       if (president && botIds.has(president.id)) {
-        const discardIdx = chooseBotDiscard(state.presidentHand, president.role, president.role === 'Liberal');
+        const discardIdx = botAI.chooseDiscard(state.presidentHand, president.role, state.botDifficulty, { phase: 'presidentDiscard', fas: state.fas, lib: state.lib });
         await processGameAction(roomId, president.id, 'presidentDiscard', { cardIndex: discardIdx });
       }
       break;
@@ -1876,11 +1857,11 @@ async function runBotTurn(roomId) {
     case 'chancellorDiscard': {
       const chancellor = state.players[state.chancellorIdx];
       if (chancellor && botIds.has(chancellor.id)) {
-        if (state.fas >= 5 && shouldBotProposeVeto(state, chancellor)) {
+        if (state.fas >= 5 && botAI.shouldProposeVeto(state, chancellor.id, state.botDifficulty)) {
           await processGameAction(roomId, chancellor.id, 'proposeVeto', {});
           break;
         }
-        const discardIdx = chooseBotDiscard(state.hand, chancellor.role, chancellor.role === 'Liberal');
+        const discardIdx = botAI.chooseDiscard(state.hand, chancellor.role, state.botDifficulty, { phase: 'chancellorDiscard', fas: state.fas, lib: state.lib });
         await processGameAction(roomId, chancellor.id, 'chancellorDiscard', { cardIndex: discardIdx });
       }
       break;
@@ -1898,13 +1879,13 @@ async function runBotTurn(roomId) {
         if (state.execPower === 'peekPolicies') {
           await processGameAction(roomId, president.id, 'peekPolicies', {});
         } else if (state.execPower === 'investigate') {
-          const targetIdx = chooseBotExecutiveTarget(state, 'investigate');
+          const targetIdx = botAI.chooseExecutiveTarget(state, president.id, 'investigate', state.botDifficulty);
           if (targetIdx != null) await processGameAction(roomId, president.id, 'investigate', { targetIdx });
         } else if (state.execPower === 'specialElection') {
-          const targetIdx = chooseBotExecutiveTarget(state, 'specialElection');
+          const targetIdx = botAI.chooseExecutiveTarget(state, president.id, 'specialElection', state.botDifficulty);
           if (targetIdx != null) await processGameAction(roomId, president.id, 'specialElection', { targetIdx });
         } else if (state.execPower === 'execute') {
-          const targetIdx = chooseBotExecutiveTarget(state, 'execute');
+          const targetIdx = botAI.chooseExecutiveTarget(state, president.id, 'execute', state.botDifficulty);
           if (targetIdx != null) await processGameAction(roomId, president.id, 'execute', { targetIdx });
         }
       }

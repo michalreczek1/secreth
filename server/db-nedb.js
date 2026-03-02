@@ -15,6 +15,11 @@ function createNedbStore({ dataDir }) {
   users.ensureIndex({ fieldName: 'username_lower' });
   roomPlayers.ensureIndex({ fieldName: 'roomId' });
 
+  function mapRoom(room) {
+    if (!room) return null;
+    return { ...room, botDifficulty: room.botDifficulty || 'medium' };
+  }
+
   const store = {
     provider: 'nedb',
     users: {
@@ -42,18 +47,20 @@ function createNedbStore({ dataDir }) {
     },
 
     rooms: {
-      findById: (id) => rooms.findOneAsync({ _id: id }),
-      findAll: () => rooms.findAsync({}).then(r => r.sort((a, b) => (a.createdAt > b.createdAt ? -1 : 1))),
+      findById: (id) => rooms.findOneAsync({ _id: id }).then(mapRoom),
+      findAll: () => rooms.findAsync({}).then(r => r.sort((a, b) => (a.createdAt > b.createdAt ? -1 : 1)).map(mapRoom)),
       create: (id, name, ownerId, ownerName, options = {}) => rooms.insertAsync({
         _id: id,
         name,
         ownerId,
         ownerName,
         state: options.state || 'lobby',
+        botDifficulty: options.botDifficulty || 'medium',
         gameData: options.gameData ?? null,
         createdAt: options.createdAt || new Date().toISOString(),
       }),
       setState: (id, state, gameData) => rooms.updateAsync({ _id: id }, { $set: { state, gameData } }, {}),
+      setBotDifficulty: (id, botDifficulty) => rooms.updateAsync({ _id: id }, { $set: { botDifficulty } }, {}),
       delete: (id) => rooms.removeAsync({ _id: id }, {}),
     },
 

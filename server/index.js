@@ -899,7 +899,10 @@ app.post('/api/rooms/:id/bot-difficulty', requireAuth, async (req, res) => {
     if (room.ownerId !== req.session.userId && !req.session.isAdmin) {
       return res.status(403).json({ error: 'Brak uprawnień' });
     }
-    const difficulty = botAI.normalizeDifficulty(req.body?.difficulty);
+    if (!botAI.isValidDifficulty(req.body?.difficulty)) {
+      return res.status(400).json({ error: 'Nieprawidłowy poziom botów' });
+    }
+    const difficulty = req.body.difficulty;
     await db.rooms.setBotDifficulty(req.params.id, difficulty);
     io.emit('rooms:updated');
     res.json({ ok: true, difficulty });

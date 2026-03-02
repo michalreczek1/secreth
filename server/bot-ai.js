@@ -27,8 +27,12 @@ const BOT_PROFILES = {
   },
 };
 
+function isValidDifficulty(value) {
+  return DIFFICULTIES.includes(value);
+}
+
 function normalizeDifficulty(value) {
-  return DIFFICULTIES.includes(value) ? value : 'medium';
+  return isValidDifficulty(value) ? value : 'medium';
 }
 
 function getProfile(difficulty) {
@@ -45,6 +49,10 @@ function clamp(value, min, max) {
 
 function alivePlayers(state) {
   return state.players.filter((player) => !player.dead);
+}
+
+function automatedPlayers(state) {
+  return state.players.filter((player) => isBotId(player.id) || state.botControlled?.[player.id]);
 }
 
 function makeBaseMemory(state, bot) {
@@ -92,7 +100,7 @@ function makeBaseMemory(state, bot) {
 
 function ensureBotMemoryState(state) {
   if (!state.botMemory || typeof state.botMemory !== 'object') state.botMemory = {};
-  for (const bot of state.players.filter((player) => isBotId(player.id) || state.botControlled?.[player.id])) {
+  for (const bot of automatedPlayers(state)) {
     if (!state.botMemory[bot.id]) state.botMemory[bot.id] = makeBaseMemory(state, bot);
     const memory = state.botMemory[bot.id];
     if (!memory.suspicions) memory.suspicions = {};
@@ -132,7 +140,7 @@ function rememberVoteHistory(state) {
   const enactedFascist = state.log?.[0]?.text?.includes('Faszystowska Ustawa') || false;
   const enactedLiberal = state.log?.[0]?.text?.includes('Liberalna Ustawa') || false;
 
-  for (const bot of state.players.filter((player) => isBotId(player.id))) {
+  for (const bot of automatedPlayers(state)) {
     const memory = state.botMemory[bot.id];
     if (memory.processedVoteIds.includes(latest.id)) continue;
     memory.processedVoteIds.push(latest.id);
@@ -169,7 +177,7 @@ function rememberClaimHistory(state) {
   if (!latest?.sessionId) return state;
   const claimKey = `${latest.sessionId}:${latest.presidentClaim || ''}:${latest.chancellorClaim || ''}:${latest.presidentSkipped ? 'p1' : 'p0'}:${latest.chancellorSkipped ? 'c1' : 'c0'}`;
 
-  for (const bot of state.players.filter((player) => isBotId(player.id))) {
+  for (const bot of automatedPlayers(state)) {
     const memory = state.botMemory[bot.id];
     if (memory.processedClaimKeys.includes(claimKey)) continue;
     memory.processedClaimKeys.push(claimKey);
@@ -217,7 +225,7 @@ function rememberPolicyAndExecutive(prevState, state, context = {}) {
     ? `${state.gameId}:${context.action}:${context.userId}:${context.payload?.targetIdx ?? 'none'}`
     : null;
 
-  for (const bot of state.players.filter((player) => isBotId(player.id))) {
+  for (const bot of automatedPlayers(state)) {
     const memory = state.botMemory[bot.id];
     if ((libChanged || fasChanged) && !memory.processedPolicyKeys.includes(policyKey)) {
       memory.processedPolicyKeys.push(policyKey);
@@ -449,6 +457,7 @@ function chooseClaim(state, botId, session, difficulty) {
 
 module.exports = {
   BOT_PROFILES,
+  isValidDifficulty,
   normalizeDifficulty,
   getProfile,
   ensureBotMemoryState,

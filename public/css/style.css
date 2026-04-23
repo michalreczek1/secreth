@@ -726,9 +726,11 @@ label { font-size: 12px; color: var(--text-dim); display: block; margin-bottom: 
 }
 .claim-history-preview-line {
   display: grid;
-  grid-template-columns: 74px minmax(0, 1fr) auto;
+  grid-template-columns: minmax(74px, max-content) minmax(0, 1fr) max-content;
+  grid-template-areas: "role name value";
   gap: 8px;
   align-items: center;
+  min-width: 0;
 }
 .claim-history-preview-line + .claim-history-preview-line {
   margin-top: 6px;
@@ -763,9 +765,11 @@ label { font-size: 12px; color: var(--text-dim); display: block; margin-bottom: 
 }
 .claim-history-row {
   display: grid;
-  grid-template-columns: 84px minmax(0, 1fr) auto;
+  grid-template-columns: minmax(84px, max-content) minmax(0, 1fr) max-content;
+  grid-template-areas: "role name value";
   gap: 10px;
   align-items: center;
+  min-width: 0;
   padding: 8px 10px;
   background: rgba(255,255,255,.02);
   border: 1px solid rgba(255,255,255,.05);
@@ -793,11 +797,14 @@ label { font-size: 12px; color: var(--text-dim); display: block; margin-bottom: 
   align-items: center;
   justify-content: flex-end;
   gap: 6px;
-  min-width: 0;
+  min-width: max-content;
+  justify-self: end;
 }
 .claim-history-cards {
   display: inline-flex;
+  flex: 0 0 auto;
   gap: 4px;
+  white-space: nowrap;
 }
 .claim-history-cards.compact .claim-card-chip {
   width: 22px;

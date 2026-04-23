@@ -1,5 +1,5 @@
 const { Pool } = require('pg');
-const { v4: uuidv4 } = require('uuid');
+const { randomUUID } = require('crypto');
 const bcrypt = require('bcryptjs');
 const logger = require('./logger');
 
@@ -150,7 +150,7 @@ async function createPostgresStore({ connectionString }) {
         return rows.map(mapUser);
       },
       async create(username, passwordHash, options = {}) {
-        const id = options.id || uuidv4();
+        const id = options.id || randomUUID();
         const { rows } = await query(`
           INSERT INTO users (id, username, username_lower, password_hash, is_admin, is_active, created_at, last_seen)
           VALUES ($1, $2, $3, $4, $5, $6, $7, $8)

@@ -6,7 +6,7 @@ const session    = require('express-session');
 const FileStore  = require('session-file-store')(session);
 const bcrypt     = require('bcryptjs');
 const path       = require('path');
-const { v4: uuidv4 } = require('uuid');
+const { randomUUID } = require('crypto');
 const fs         = require('fs');
 
 const { db }   = require('./db');
@@ -28,7 +28,7 @@ fs.mkdirSync(SESSION_DIR, { recursive: true });
 // ── MIDDLEWARE ────────────────────────────────────────────────────────────────
 app.use(express.json());
 app.use((req, res, next) => {
-  req.requestId = req.get('x-request-id') || uuidv4();
+  req.requestId = req.get('x-request-id') || randomUUID();
   res.setHeader('x-request-id', req.requestId);
   next();
 });
@@ -272,7 +272,7 @@ function jsonError(res, status, message, extra = {}) {
 
 function createSocketTrace(socket, event, extra = {}) {
   return {
-    traceId: uuidv4(),
+    traceId: randomUUID(),
     event,
     socketId: socket.id,
     connectionId: socket.data?.connectionId || null,
@@ -927,7 +927,7 @@ app.post('/api/rooms', requireAuth, async (req, res) => {
   try {
     const { name } = req.body;
     if (!name || name.length < 2 || name.length > 40) return res.status(400).json({ error: 'Nazwa 2-40 znaków' });
-    const id = uuidv4().substring(0, 8).toUpperCase();
+    const id = randomUUID().substring(0, 8).toUpperCase();
     await db.rooms.create(id, name, req.session.userId, req.session.username, { botDifficulty: 'medium', botSpeed: 'normal' });
     await db.roomPlayers.add(id, req.session.userId, req.session.username);
     const room = await db.rooms.findById(id);
@@ -982,7 +982,7 @@ app.post('/api/rooms/:id/bots', requireAuth, async (req, res) => {
 
     const existingNames = new Set(players.map(p => p.username));
     for (let i = 0; i < toAdd; i++) {
-      const botId = `bot:${uuidv4()}`;
+      const botId = `bot:${randomUUID()}`;
       const botName = pickBotName(existingNames);
       existingNames.add(botName);
       registerBot(req.params.id, botId);
@@ -1073,7 +1073,7 @@ io.on('connection', async (socket) => {
 
   const userId = user._id;
   let username = user.username;
-  socket.data.connectionId = uuidv4();
+  socket.data.connectionId = randomUUID();
   sess.username = user.username;
   sess.isAdmin = !!user.isAdmin;
   sess.save(() => {});
